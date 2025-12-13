@@ -226,6 +226,8 @@ def inference(
     logging.info(f"Loading model and tokenizer...")
     token_ids = text_to_token_ids(prompt, tokenizer)[:, :prompt_len]
     truncated_prompt = token_ids_to_text(token_ids, tokenizer)
+    logging.info("Number of Prefill Tokens: %d", token_ids.size(1))
+    print("Number of Prefill Tokens:", token_ids.size(1))
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(script_dir, "configs", "llama32_1b.json")
@@ -332,15 +334,18 @@ def inference(
     total_time = end - start
     post_prefill_time = end - prefill_end_time if num_tokens > 0 else 0
 
-    tokens_per_second = (num_tokens - 1) / post_prefill_time if num_tokens > 1 else 0
+    prefill_tokens_per_second = token_ids.size(1) / prefill_time
+    decode_tokens_per_second = (num_tokens - 1) / post_prefill_time if num_tokens > 1 else 0
     time_per_token = total_time / (num_tokens - 1) if num_tokens > 1 else prefill_time
 
     print("=" * 55)
     print(" TIMING RESULTS:")
     print(f"  Total time: {total_time:.4f} seconds")
     print(f"  Prefill time: {prefill_time:.4f} seconds")
+    print(f"  Post-prefill time: {post_prefill_time:.4f} seconds")
+    print(f"  Prefill tokens per second: {prefill_tokens_per_second:.2f}")
     print(f"  Tokens generated: {num_tokens}")
-    print(f"  Tokens per second: {tokens_per_second:.2f}")
+    print(f"  Decode tokens per second: {decode_tokens_per_second:.2f}")
     print(
         f"  Time per token: {time_per_token:.4f} seconds"
         if num_tokens > 0
@@ -350,7 +355,10 @@ def inference(
 
     logging.info(f"Generation time: {total_time:.4f} sec")
     logging.info(f"Total wall clock time: {total_time:.4f} sec")
-    logging.info(f"Tokens per second: {tokens_per_second:.2f}")
+    logging.info(f"Prefill time: {prefill_time:.4f} sec")
+    logging.info(f"Post-prefill time: {post_prefill_time:.4f} sec")
+    logging.info(f"Prefill tokens per second: {prefill_tokens_per_second:.2f}")
+    logging.info(f"Decode tokens per second: {decode_tokens_per_second:.2f}")
     logging.info(
         f"Time per token: {time_per_token:.4f} sec"
         if num_tokens > 0

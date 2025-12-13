@@ -47,7 +47,7 @@ class FunctionStats:
         return statistics.median(self.durations)
 
 
-def parse_profile_log(log_file):
+def parse_profile_log(log_file, start_time=None):
     """
     Parse a profile log file and extract function timing information.
 
@@ -85,7 +85,9 @@ def parse_profile_log(log_file):
                     stats[func_id].name = func_id
 
                 if function_stack:
-                    stats[func_id].add_duration(timestamp - function_stack.pop()[1])
+                    function_start_time=function_stack.pop()[1]
+                    if start_time is None or function_start_time >= start_time:
+                        stats[func_id].add_duration(timestamp - function_start_time)
                 else:
                     raise RuntimeError(
                         f"Stack empty, found a log for the return but missing a log for the call of {func_id}"
@@ -327,13 +329,18 @@ Examples:
         type=str,
         help="Export results to CSV file instead of printing to console",
     )
+    parser.add_argument(
+        "--start-time", 
+        type=float, 
+        help="Ignore stats for functions starting before this timestamp"
+    )
 
     args = parser.parse_args()
 
     # Parse the log file
     log_file = Path(args.log_file)
     print(f"Parsing {log_file}...")
-    stats = parse_profile_log(log_file)
+    stats = parse_profile_log(log_file, start_time=args.start_time)
 
     if not stats:
         print("No profiling data found in log file.")

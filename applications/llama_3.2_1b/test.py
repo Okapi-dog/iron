@@ -7,7 +7,7 @@ from pathlib import Path
 # Get the directory containing this test file
 test_dir = Path(__file__).parent.absolute()
 
-run = f"python3 {test_dir}/inference.py /srv/llama3.2-1b/model.safetensors /srv/llama3.2-1b/tokenizer.model --prompt_len 2048 --num_tokens 40"
+run = f"python3 {test_dir}/inference.py {test_dir}/model.safetensors {test_dir}/tokenizer.model --prompt_len 2048 --num_tokens 40"
 
 checks = []
 
