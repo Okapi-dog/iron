@@ -158,7 +158,7 @@ def test_gemv(M, K, num_aie_columns, tile_size, aie_context):
     output_buffers = {"output": golden_ref["C"]}
 
     errors, latency_us, bandwidth_gbps = run_test(
-        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=0
+        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=2 ,timed_iters=5
     )
 
     #print(operator.xrt_kernels["gemv"][1])
@@ -171,28 +171,6 @@ def test_gemv(M, K, num_aie_columns, tile_size, aie_context):
     golden_ref = generate_golden_reference(M=M, K=K,seed=100)
     input_buffers = {"matrix": golden_ref["A"].flatten(), "vector": golden_ref["B"]}
     output_buffers = {"output": golden_ref["C"]}
-    errors, latency_us, bandwidth_gbps = run_test(
-        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=0
-    )
-    save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col_2nd")
-    print(f"\nLatency: {latency_us:.1f} us")
-    golden_ref = generate_golden_reference(M=M//2, K=K,seed=100)
-    input_buffers = {"matrix": golden_ref["A"].flatten(), "vector": golden_ref["B"]}
-    output_buffers = {"output": golden_ref["C"]}
-    errors, latency_us, bandwidth_gbps = run_test(
-        operator2, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=0
-    )
-    save_trace(operator2, filename_suffix=f"3rd")
-    golden_ref = generate_golden_reference(M=M, K=K,seed=100)
-    input_buffers = {"matrix": golden_ref["A"].flatten(), "vector": golden_ref["B"]}
-    output_buffers = {"output": golden_ref["C"]}
-    errors, latency_us, bandwidth_gbps = run_test(
-        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=0
-    )
-    save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col_4th")
-    print(f"\nLatency: {latency_us:.1f} us")
-
-
 
     gflops = (2.0 * M * K) / (latency_us * 1e-6) / 1e9
     print(f"Throughput: {gflops:.6e} GFLOP/s")

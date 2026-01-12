@@ -118,11 +118,11 @@ class GroupedQueryAttention(nn.Module):
         if self.cfg["use_kv_cache"] and self.cfg["use_aie_gemv"]:
 
             aie_gemv_config = {
-                "num_aie_columns": 1,
+                "num_aie_columns": 4,
                 "is_mv": False,
                 "use_static_weight": True,
             }
-            self.aie_query_gemv = AIEGEMV(M=d_out, K=d_in, **aie_gemv_config)
+            self.aie_query_gemv = AIEGEMV(M=d_out, K=d_in, **aie_gemv_config, trace_ddr_id=3, trace_size=65536)#3だった
             kv_out_dim = num_kv_groups * self.head_dim
             self.aie_key_gemv = AIEGEMV(M=kv_out_dim, K=d_in, **aie_gemv_config)
             self.aie_value_gemv = AIEGEMV(M=kv_out_dim, K=d_in, **aie_gemv_config)

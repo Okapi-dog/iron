@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <type_traits>
+extern "C" void event0();
+extern "C" void event1();
 
 #define REL_WRITE 0
 #define REL_READ 1
@@ -34,6 +36,7 @@ void matvec_vectorized(uint32_t m,
                        const bfloat16 *__restrict b,
                        bfloat16 *__restrict c)
 {
+    event0();
     ::aie::set_rounding(aie::rounding_mode::conv_even);
     c += row_offset * m;
     bfloat16 *c_end = c + m;
@@ -43,7 +46,9 @@ void matvec_vectorized(uint32_t m,
         // The following two pragmas enable pipelining the zero-overhead loop, but they do assume that k is at least
         // two. This assumption should hold for any useful use of this function; if k were one, this would be a simple
         // scalar multiplication of a vector.
-        AIE_LOOP_MIN_ITERATION_COUNT(2)
+        #pragma clang loop pipeline(disable)
+        AIE_LOOP_MIN_ITERATION_COUNT(8)
+        
         for (const bfloat16 *__restrict b_cur = b; b_cur < b_end; b_cur += r, a += r) {
             aie::vector<bfloat16, r> a_vec = aie::load_v<r>(a);
             aie::vector<bfloat16, r> b_vec = aie::load_v<r>(b_cur);
@@ -51,6 +56,7 @@ void matvec_vectorized(uint32_t m,
         }
         *c = static_cast<bfloat16>(aie::reduce_add(acc.template to_vector<float>()));
     }
+    event1();
 }
 
 extern "C" {
