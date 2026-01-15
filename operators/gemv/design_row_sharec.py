@@ -53,10 +53,8 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
         [np.int32, np.int32, np.int32, L1_A_ty, L1_B_ty, L1_C_ty],
     )
 
-    A_L3L1_fifos = [ObjectFifo(L1_A_ty, name=f"A_L3L1_{i}") for i in range(num_cores)]
-    B_L3L1_fifos = [
-        ObjectFifo(L1_B_ty, name=f"B_L3L1_{i}", depth=1) for i in range(num_cores)
-    ]
+    A_L3L1_fifos = [ObjectFifo(L1_A_ty, name=f"A_L3L1_{i}", depth=2) for i in range(num_cores)]
+    B_L3L1_shared = ObjectFifo(L1_B_ty, name="B_shared", depth=1)
     C_L1L3_fifos = [
         ObjectFifo(L1_C_ty, name=f"C_L1L3_{i}", depth=1) for i in range(num_cores)
     ]
@@ -91,7 +89,7 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
                 core_body,
                 [
                     A_L3L1_fifos[num_core].cons(),
-                    B_L3L1_fifos[num_core].cons(),
+                    B_L3L1_shared.cons(),
                     C_L1L3_fifos[num_core].prod(),
                     matvec,
                 ],
@@ -112,7 +110,10 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
     # Every column gets the whole of B, no TAP needed.
     C_taps = [
         TensorAccessPattern(
-            (1, M), col * (M // num_cores), [1, 1, 1, (M // num_cores)], [0, 0, 0, 1]
+            (1, M),
+            col * (M // num_cores),
+            [1, 1, 1, (M // num_cores)],
+            [0, 0, 0, 1]
         )
         for col in range(num_cores)
     ]
@@ -173,13 +174,10 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
 
     with rt.sequence(L3_A_ty, L3_B_ty, L3_C_ty) as (A, B, C):
         if trace_ddr_id is not None:
-            offset_bytes = M * 2 #Cのサイズはbf16がM個
             rt.enable_trace(
-                #object_fifoのCのddr_idを指定する。よって、offsetはCのサイズになる。
                 trace_size=trace_size,
-                trace_offset=offset_bytes,
                 #workers=[w for w in [workers[0]] for _ in range(2)],
-                workers=[workers[0]],
+                workers=[workers[0],workers[0]],
                 coretile_events=my_core_events,
                 shimtile_events=my_shim_events,
                 coremem_events=my_coremem_events,
@@ -187,6 +185,7 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
             )
         rt.start(*workers)
         tg = rt.task_group()
+        rt.fill(B_L3L1_shared.prod(), B, task_group=tg, placement=Tile(min(num_cores-1,7), 0))
         for num_core in range(num_cores):
             
             tile_col = num_core % device_cols
@@ -196,12 +195,6 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
                 A_L3L1_fifos[num_core].prod(), 
                 A, 
                 A_taps[num_core], 
-                task_group=tg,
-                placement=shim_tile
-            )
-            rt.fill(
-                B_L3L1_fifos[num_core].prod(), 
-                B, 
                 task_group=tg,
                 placement=shim_tile
             )

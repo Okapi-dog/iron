@@ -29,10 +29,13 @@ def nearly_equal(
     return diff < max(abs_tol, rel_tol * norm)
 
 
-def verify_buffer(operator, buf_name, reference, rel_tol=0.04, abs_tol=1e-6):
+def verify_buffer(operator, buf_name, reference, rel_tol=0.04, abs_tol=1e-6, is_traceuse_same_ddr_id=False):
     errors = []
     expected_np = torch_to_numpy(reference).reshape((-1,))
-    buf_size = operator.buffers[buf_name] // 2
+    if operator.trace_ddr_id is not None and buf_name == "output" and is_traceuse_same_ddr_id:
+        buf_size =operator.buffers[buf_name]// 2 - operator.trace_size * 2
+    else:
+        buf_size = operator.buffers[buf_name] // 2
     output = operator.read_buffer(buf_name, (buf_size,))
     if len(output) != len(expected_np):
         print(
@@ -59,6 +62,7 @@ def run_test(
     abs_tol=1e-6,
     warmup_iters=1,
     timed_iters=1,
+    is_traceuse_same_ddr_id=False
 ):
     """
     Run operator test with specified input/output/intermediate buffers.
@@ -70,7 +74,7 @@ def run_test(
         intermediate_buffers: Optional dict mapping buffer names to reference arrays for validation
         rel_tol: Relative tolerance for comparison of output and intermediate buffers
         abs_tol: Absolute tolerance for comparison of output and intermediate buffers
-
+        is_traceuse_same_ddr_id: Boolean flag indicating if trace use the same DDR ID as other buffers
     Returns:
         (errors: list, latency_us: float, bandwidth_gbps: float)
     """
@@ -108,7 +112,7 @@ def run_test(
     # Verify outputs
     errors = {}
     for buf_name, expected in output_buffers.items():
-        buf_errors = verify_buffer(operator, buf_name, expected, rel_tol, abs_tol)
+        buf_errors = verify_buffer(operator, buf_name, expected, rel_tol, abs_tol, is_traceuse_same_ddr_id)
         if buf_errors:
             errors[buf_name] = buf_errors
 

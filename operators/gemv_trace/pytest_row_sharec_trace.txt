@@ -1,0 +1,1328 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /home/hitoshi/IRON/ironenv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/hitoshi/IRON
+configfile: pytest.ini
+plugins: anyio-4.12.0
+collecting ... collected 64 items
+
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 626.1 us
+Throughput: 1.256085e+01 GFLOP/s
+Effective Bandwidth: 1.262586e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 637.9 us
+Throughput: 1.232785e+01 GFLOP/s
+Effective Bandwidth: 1.239166e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 630.1 us
+Throughput: 1.248136e+01 GFLOP/s
+Effective Bandwidth: 1.254596e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 634.8 us
+Throughput: 1.238848e+01 GFLOP/s
+Effective Bandwidth: 1.245260e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 651.0 us
+Throughput: 1.208035e+01 GFLOP/s
+Effective Bandwidth: 1.214287e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 366.6 us
+Throughput: 2.144954e+01 GFLOP/s
+Effective Bandwidth: 2.156056e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 366.5 us
+Throughput: 2.146032e+01 GFLOP/s
+Effective Bandwidth: 2.157139e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 355.6 us
+Throughput: 2.211832e+01 GFLOP/s
+Effective Bandwidth: 2.223280e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 359.7 us
+Throughput: 2.186423e+01 GFLOP/s
+Effective Bandwidth: 2.197740e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 352.8 us
+Throughput: 2.228831e+01 GFLOP/s
+Effective Bandwidth: 2.240367e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 258.3 us
+Throughput: 3.044141e+01 GFLOP/s
+Effective Bandwidth: 3.059897e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 265.2 us
+Throughput: 2.965088e+01 GFLOP/s
+Effective Bandwidth: 2.980434e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 249.6 us
+Throughput: 3.150880e+01 GFLOP/s
+Effective Bandwidth: 3.167189e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 272.6 us
+Throughput: 2.884926e+01 GFLOP/s
+Effective Bandwidth: 2.899858e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 254.7 us
+Throughput: 3.087643e+01 GFLOP/s
+Effective Bandwidth: 3.103624e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 216.1 us
+Throughput: 3.639312e+01 GFLOP/s
+Effective Bandwidth: 3.658148e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 213.6 us
+Throughput: 3.680971e+01 GFLOP/s
+Effective Bandwidth: 3.700023e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 212.6 us
+Throughput: 3.698876e+01 GFLOP/s
+Effective Bandwidth: 3.718020e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 278.8 us
+Throughput: 2.821177e+01 GFLOP/s
+Effective Bandwidth: 2.835779e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 218.7 us
+Throughput: 3.595420e+01 GFLOP/s
+Effective Bandwidth: 3.614029e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_12col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+FAILED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_15col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+FAILED
+test.py::test_gemv[matrix_vector_mul_2048x8192_4_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+FAILED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 396.4 us
+Throughput: 2.116272e+01 GFLOP/s
+Effective Bandwidth: 2.126605e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 273.6 us
+Throughput: 3.066205e+01 GFLOP/s
+Effective Bandwidth: 3.081176e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 222.0 us
+Throughput: 3.778594e+01 GFLOP/s
+Effective Bandwidth: 3.797044e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 3550.8 us
+Throughput: 4.429653e+01 GFLOP/s
+Effective Bandwidth: 4.432854e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+[AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 2856.1 us
+Throughput: 5.506948e+01 GFLOP/s
+Effective Bandwidth: 5.510927e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_12col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_15col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+FAILED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_1col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 627.9 us
+Throughput: 1.252508e+01 GFLOP/s
+Effective Bandwidth: 1.258991e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_1col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 627.7 us
+Throughput: 1.252896e+01 GFLOP/s
+Effective Bandwidth: 1.259380e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_1col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 615.0 us
+Throughput: 1.278668e+01 GFLOP/s
+Effective Bandwidth: 1.285287e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_1col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 833.1 us
+Throughput: 9.440036e+00 GFLOP/s
+Effective Bandwidth: 9.488895e+00 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_1col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 742.4 us
+Throughput: 1.059340e+01 GFLOP/s
+Effective Bandwidth: 1.064823e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_2col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 362.3 us
+Throughput: 2.170455e+01 GFLOP/s
+Effective Bandwidth: 2.181689e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_2col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 368.2 us
+Throughput: 2.135613e+01 GFLOP/s
+Effective Bandwidth: 2.146666e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_2col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 354.6 us
+Throughput: 2.217883e+01 GFLOP/s
+Effective Bandwidth: 2.229362e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_2col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 355.7 us
+Throughput: 2.210836e+01 GFLOP/s
+Effective Bandwidth: 2.222279e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_2col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 362.2 us
+Throughput: 2.171368e+01 GFLOP/s
+Effective Bandwidth: 2.182606e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_4col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 247.7 us
+Throughput: 3.174973e+01 GFLOP/s
+Effective Bandwidth: 3.191406e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_4col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 244.5 us
+Throughput: 3.216080e+01 GFLOP/s
+Effective Bandwidth: 3.232726e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_4col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 238.6 us
+Throughput: 3.295455e+01 GFLOP/s
+Effective Bandwidth: 3.312512e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_4col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 252.6 us
+Throughput: 3.112770e+01 GFLOP/s
+Effective Bandwidth: 3.128881e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_4col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 245.5 us
+Throughput: 3.203086e+01 GFLOP/s
+Effective Bandwidth: 3.219665e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_8col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 204.7 us
+Throughput: 3.841425e+01 GFLOP/s
+Effective Bandwidth: 3.861308e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_8col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 203.4 us
+Throughput: 3.866850e+01 GFLOP/s
+Effective Bandwidth: 3.886864e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_8col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 211.4 us
+Throughput: 3.720012e+01 GFLOP/s
+Effective Bandwidth: 3.739266e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_8col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 220.0 us
+Throughput: 3.575214e+01 GFLOP/s
+Effective Bandwidth: 3.593719e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_8col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 213.1 us
+Throughput: 3.690821e+01 GFLOP/s
+Effective Bandwidth: 3.709924e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_12col1] FAILED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_15col1] FAILED
+test.py::test_gemv[matrix_vector_mul_2048x8192_4_1col1] FAILED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_2col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 8192 non-empty lines.
+
+Latency: 368.8 us
+Throughput: 2.274551e+01 GFLOP/s
+Effective Bandwidth: 2.285657e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_4col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 249.9 us
+Throughput: 3.356525e+01 GFLOP/s
+Effective Bandwidth: 3.372915e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_8col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 214.4 us
+Throughput: 3.912159e+01 GFLOP/s
+Effective Bandwidth: 3.931262e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_1col1] FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_2col1] FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_4col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 3615.3 us
+Throughput: 4.350531e+01 GFLOP/s
+Effective Bandwidth: 4.353675e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_8col1] [AIEGEMV] Trace saved to trace_gemv.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 2844.6 us
+Throughput: 5.529252e+01 GFLOP/s
+Effective Bandwidth: 5.533248e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_12col1] FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_15col1] FAILED
+
+=================================== FAILURES ===================================
+_______________ test_gemv[matrix_vector_mul_1920x2048_1_12col0] ________________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_12c_1920x2048_1t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":15:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":15:26: see current operation: %12 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":16:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":16:26: see current operation: %13 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: "-":17:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":17:26: see current operation: %14 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":17:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":17:26: see current operation: %14 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":15:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":15:26: see current operation: %12 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":16:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":16:26: see current operation: %13 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: unknown: 'aie.flow' op attribute 'source_channel' failed to satisfy constraint: 32-bit signless integer attribute whose minimum value is 0
+E    note: unknown: see current operation: "aie.flow"(%12, %0) <{dest_bundle = 1 : i32, dest_channel = 1 : i32, source_bundle = 1 : i32, source_channel = -1 : i32}> : (index, index) -> ()
+_______________ test_gemv[matrix_vector_mul_1920x2048_1_15col0] ________________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_15c_1920x2048_1t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":19:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":19:26: see current operation: %16 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: "-":20:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":20:26: see current operation: %17 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":21:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":21:26: see current operation: %18 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":22:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":22:26: see current operation: %19 = "aie.tile"() <{col = 4 : i32, row = 0 : i32}> : () -> index
+E   error: "-":23:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":23:26: see current operation: %20 = "aie.tile"() <{col = 5 : i32, row = 0 : i32}> : () -> index
+E   error: "-":24:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":24:26: see current operation: %21 = "aie.tile"() <{col = 6 : i32, row = 0 : i32}> : () -> index
+E   error: "-":20:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":20:26: see current operation: %17 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":21:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":21:26: see current operation: %18 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":22:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":22:26: see current operation: %19 = "aie.tile"() <{col = 4 : i32, row = 0 : i32}> : () -> index
+E   error: "-":23:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":23:26: see current operation: %20 = "aie.tile"() <{col = 5 : i32, row = 0 : i32}> : () -> index
+E   error: "-":24:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":24:26: see current operation: %21 = "aie.tile"() <{col = 6 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":19:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":19:26: see current operation: %16 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: unknown: 'aie.flow' op attribute 'source_channel' failed to satisfy constraint: 32-bit signless integer attribute whose minimum value is 0
+E    note: unknown: see current operation: "aie.flow"(%15, %0) <{dest_bundle = 1 : i32, dest_channel = 1 : i32, source_bundle = 1 : i32, source_channel = -1 : i32}> : (index, index) -> ()
+________________ test_gemv[matrix_vector_mul_2048x8192_4_1col0] ________________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_1c_2048x8192_4t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x400-0x103FF 	(65536 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0x10400-0x203FF 	(65536 bytes)
+E     	B_L3L1_0_cons_buff_0 	: 0x20400-0x243FF 	(16384 bytes)
+E     	C_L1L3_0_buff_0 	: 0x24400-0x253FF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_1col0] ________________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_1c_38400x2048_4t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	C_L1L3_0_buff_0 	: 0x400-0x12FFF 	(76800 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x13000-0x16FFF 	(16384 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0x17000-0x1AFFF 	(16384 bytes)
+E     	B_L3L1_0_cons_buff_0 	: 0x1B000-0x1BFFF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_2col0] ________________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_2c_38400x2048_4t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	C_L1L3_0_buff_0 	: 0x400-0x99FF 	(38400 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x9A00-0xD9FF 	(16384 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0xDA00-0x119FF 	(16384 bytes)
+E     	B_L3L1_0_cons_buff_0 	: 0x11A00-0x129FF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_12col0] _______________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_12c_38400x2048_4t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":15:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":15:26: see current operation: %12 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":16:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":16:26: see current operation: %13 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: "-":17:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":17:26: see current operation: %14 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":17:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":17:26: see current operation: %14 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":15:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":15:26: see current operation: %12 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":16:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":16:26: see current operation: %13 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: unknown: 'aie.flow' op attribute 'source_channel' failed to satisfy constraint: 32-bit signless integer attribute whose minimum value is 0
+E    note: unknown: see current operation: "aie.flow"(%12, %0) <{dest_bundle = 1 : i32, dest_channel = 1 : i32, source_bundle = 1 : i32, source_channel = -1 : i32}> : (index, index) -> ()
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_15col0] _______________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_15c_38400x2048_4t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":19:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":19:26: see current operation: %16 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: "-":20:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":20:26: see current operation: %17 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":21:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":21:26: see current operation: %18 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":22:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":22:26: see current operation: %19 = "aie.tile"() <{col = 4 : i32, row = 0 : i32}> : () -> index
+E   error: "-":23:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":23:26: see current operation: %20 = "aie.tile"() <{col = 5 : i32, row = 0 : i32}> : () -> index
+E   error: "-":24:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":24:26: see current operation: %21 = "aie.tile"() <{col = 6 : i32, row = 0 : i32}> : () -> index
+E   error: "-":20:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":20:26: see current operation: %17 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":21:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":21:26: see current operation: %18 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":22:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":22:26: see current operation: %19 = "aie.tile"() <{col = 4 : i32, row = 0 : i32}> : () -> index
+E   error: "-":23:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":23:26: see current operation: %20 = "aie.tile"() <{col = 5 : i32, row = 0 : i32}> : () -> index
+E   error: "-":24:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":24:26: see current operation: %21 = "aie.tile"() <{col = 6 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":19:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":19:26: see current operation: %16 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: unknown: 'aie.flow' op attribute 'source_channel' failed to satisfy constraint: 32-bit signless integer attribute whose minimum value is 0
+E    note: unknown: see current operation: "aie.flow"(%15, %0) <{dest_bundle = 1 : i32, dest_channel = 1 : i32, source_bundle = 1 : i32, source_channel = -1 : i32}> : (index, index) -> ()
+_______________ test_gemv[matrix_vector_mul_1920x2048_1_12col1] ________________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_12c_1920x2048_1t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":15:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":15:26: see current operation: %12 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":16:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":16:26: see current operation: %13 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: "-":17:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":17:26: see current operation: %14 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":17:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":17:26: see current operation: %14 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":15:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":15:26: see current operation: %12 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":16:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":16:26: see current operation: %13 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: unknown: 'aie.flow' op attribute 'source_channel' failed to satisfy constraint: 32-bit signless integer attribute whose minimum value is 0
+E    note: unknown: see current operation: "aie.flow"(%12, %0) <{dest_bundle = 1 : i32, dest_channel = 1 : i32, source_bundle = 1 : i32, source_channel = -1 : i32}> : (index, index) -> ()
+_______________ test_gemv[matrix_vector_mul_1920x2048_1_15col1] ________________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_15c_1920x2048_1t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":19:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":19:26: see current operation: %16 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: "-":20:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":20:26: see current operation: %17 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":21:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":21:26: see current operation: %18 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":22:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":22:26: see current operation: %19 = "aie.tile"() <{col = 4 : i32, row = 0 : i32}> : () -> index
+E   error: "-":23:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":23:26: see current operation: %20 = "aie.tile"() <{col = 5 : i32, row = 0 : i32}> : () -> index
+E   error: "-":24:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":24:26: see current operation: %21 = "aie.tile"() <{col = 6 : i32, row = 0 : i32}> : () -> index
+E   error: "-":20:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":20:26: see current operation: %17 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":21:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":21:26: see current operation: %18 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":22:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":22:26: see current operation: %19 = "aie.tile"() <{col = 4 : i32, row = 0 : i32}> : () -> index
+E   error: "-":23:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":23:26: see current operation: %20 = "aie.tile"() <{col = 5 : i32, row = 0 : i32}> : () -> index
+E   error: "-":24:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":24:26: see current operation: %21 = "aie.tile"() <{col = 6 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":19:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":19:26: see current operation: %16 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: unknown: 'aie.flow' op attribute 'source_channel' failed to satisfy constraint: 32-bit signless integer attribute whose minimum value is 0
+E    note: unknown: see current operation: "aie.flow"(%15, %0) <{dest_bundle = 1 : i32, dest_channel = 1 : i32, source_bundle = 1 : i32, source_channel = -1 : i32}> : (index, index) -> ()
+________________ test_gemv[matrix_vector_mul_2048x8192_4_1col1] ________________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_1c_2048x8192_4t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x400-0x103FF 	(65536 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0x10400-0x203FF 	(65536 bytes)
+E     	B_L3L1_0_cons_buff_0 	: 0x20400-0x243FF 	(16384 bytes)
+E     	C_L1L3_0_buff_0 	: 0x24400-0x253FF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_1col1] ________________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_1c_38400x2048_4t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	C_L1L3_0_buff_0 	: 0x400-0x12FFF 	(76800 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x13000-0x16FFF 	(16384 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0x17000-0x1AFFF 	(16384 bytes)
+E     	B_L3L1_0_cons_buff_0 	: 0x1B000-0x1BFFF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_2col1] ________________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_2c_38400x2048_4t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	C_L1L3_0_buff_0 	: 0x400-0x99FF 	(38400 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x9A00-0xD9FF 	(16384 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0xDA00-0x119FF 	(16384 bytes)
+E     	B_L3L1_0_cons_buff_0 	: 0x11A00-0x129FF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_12col1] _______________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_12c_38400x2048_4t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":15:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":15:26: see current operation: %12 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":16:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":16:26: see current operation: %13 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: "-":17:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":17:26: see current operation: %14 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":17:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":17:26: see current operation: %14 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":15:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":15:26: see current operation: %12 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":16:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":16:26: see current operation: %13 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: unknown: 'aie.flow' op attribute 'source_channel' failed to satisfy constraint: 32-bit signless integer attribute whose minimum value is 0
+E    note: unknown: see current operation: "aie.flow"(%12, %0) <{dest_bundle = 1 : i32, dest_channel = 1 : i32, source_bundle = 1 : i32, source_channel = -1 : i32}> : (index, index) -> ()
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_15col1] _______________
+test.py:179: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv_trace/build/gemv_15c_38400x2048_4t_tr2.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":19:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":19:26: see current operation: %16 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: "-":20:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":20:26: see current operation: %17 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":21:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":21:26: see current operation: %18 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":22:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":22:26: see current operation: %19 = "aie.tile"() <{col = 4 : i32, row = 0 : i32}> : () -> index
+E   error: "-":23:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":23:26: see current operation: %20 = "aie.tile"() <{col = 5 : i32, row = 0 : i32}> : () -> index
+E   error: "-":24:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":24:26: see current operation: %21 = "aie.tile"() <{col = 6 : i32, row = 0 : i32}> : () -> index
+E   error: "-":20:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":20:26: see current operation: %17 = "aie.tile"() <{col = 2 : i32, row = 0 : i32}> : () -> index
+E   error: "-":21:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":21:26: see current operation: %18 = "aie.tile"() <{col = 3 : i32, row = 0 : i32}> : () -> index
+E   error: "-":22:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":22:26: see current operation: %19 = "aie.tile"() <{col = 4 : i32, row = 0 : i32}> : () -> index
+E   error: "-":23:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":23:26: see current operation: %20 = "aie.tile"() <{col = 5 : i32, row = 0 : i32}> : () -> index
+E   error: "-":24:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":24:26: see current operation: %21 = "aie.tile"() <{col = 6 : i32, row = 0 : i32}> : () -> index
+E   error: "-":18:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":18:26: see current operation: %15 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index
+E   error: "-":19:26: 'aie.tile' op number of output DMA channel exceeded!
+E    note: "-":19:26: see current operation: %16 = "aie.tile"() <{col = 1 : i32, row = 0 : i32}> : () -> index
+E   error: unknown: 'aie.flow' op attribute 'source_channel' failed to satisfy constraint: 32-bit signless integer attribute whose minimum value is 0
+E    note: unknown: see current operation: "aie.flow"(%15, %0) <{dest_bundle = 1 : i32, dest_channel = 1 : i32, source_bundle = 1 : i32, source_channel = -1 : i32}> : (index, index) -> ()
+=========================== short test summary info ============================
+FAILED test.py::test_gemv[matrix_vector_mul_1920x2048_1_12col0] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_1920x2048_1_15col0] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_2048x8192_4_1col0] - RuntimeError...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_1col0] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_2col0] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_12col0] - RuntimeErr...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_15col0] - RuntimeErr...
+FAILED test.py::test_gemv[matrix_vector_mul_1920x2048_1_12col1] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_1920x2048_1_15col1] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_2048x8192_4_1col1] - RuntimeError...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_1col1] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_2col1] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_12col1] - RuntimeErr...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_15col1] - RuntimeErr...
+======================== 14 failed, 50 passed in 46.16s ========================

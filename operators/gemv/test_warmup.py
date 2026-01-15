@@ -17,36 +17,21 @@ from operators.common.test_utils import run_test
 
 def generate_test_params(extensive=False):
     params = [
-        (1920, 2048, 1, 1),
-        (1920, 2048, 1, 2),
-        (1920, 2048, 1, 3),
-        (1920, 2048, 1, 4),
-        (1920, 2048, 1, 6),
-        (1920, 2048, 2, 1),
-        (1920, 2048, 2, 2),
-        (1920, 2048, 2, 3),
-        (1920, 2048, 2, 4),
-        (1920, 2048, 2, 6),
-        (1920, 2048, 4, 1),
-        (1920, 2048, 4, 2),
-        (1920, 2048, 4, 3),
-        (1920, 2048, 4, 4),
-        (1920, 2048, 4, 6),
-        (1920, 2048, 8, 1),
-        (1920, 2048, 8, 2),
-        (1920, 2048, 8, 3),
-        (1920, 2048, 8, 4),
-        (1920, 2048, 8, 6),
-        (2048, 8192, 1, 4),
+        (128,128,1,1),
+        (1024, 1024, 1, 1),
+        (2048, 8192, 1, 1),
+        (8192, 2048, 1, 4),
+        (2048, 8192, 2, 1),
+        (8192, 2048, 2, 4),
+        (2048, 8192, 4, 1),
+        (8192, 2048, 4, 4),
+        (2048, 8192, 8, 1),
+        (8192, 2048, 8, 4),
+        (2048, 2048, 1, 4),
         (2048, 2048, 2, 4),
         (2048, 2048, 4, 4),
         (2048, 2048, 8, 4),
-        (38400, 2048, 1, 4),
-        (38400, 2048, 2, 4),
-        (38400, 2048, 4, 4),
-        (38400, 2048, 8, 4),
-        (38400, 2048, 12, 4), 
-        (38400, 2048, 15, 4),
+        (32768, 2048, 8, 4),
     ]
     names = [
         f"matrix_vector_mul_{M}x{K}_{tile_size}_{num_aie_columns}col"
@@ -203,6 +188,7 @@ def inspect_kernel_memory_banks(operator, kernel_name="gemv"):
 )
 @pytest.mark.parametrize("M,K,num_aie_columns,tile_size", all_params)
 def test_gemv(M, K, num_aie_columns, tile_size, aie_context):
+    golden_ref = generate_golden_reference(M=M, K=K)
 
     operator = AIEGEMV(
         M=M,
@@ -211,22 +197,30 @@ def test_gemv(M, K, num_aie_columns, tile_size, aie_context):
         tile_size=tile_size,
         context=aie_context,
         trace_ddr_id=3,
-        trace_size=8192*4,
+    )
+    operator2 = AIEGEMV(
+        M=M//2,
+        K=K,
+        num_aie_columns=num_aie_columns,
+        tile_size=tile_size,
+        context=aie_context,
+        trace_ddr_id=3,
     )
 
-    golden_ref = generate_golden_reference(M=M, K=K)
     input_buffers = {"matrix": golden_ref["A"].flatten(), "vector": golden_ref["B"]}
     output_buffers = {"output": golden_ref["C"]}
+
     errors, latency_us, bandwidth_gbps = run_test(
-        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=2
+        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=0
     )
+
+    #print(operator.xrt_kernels["gemv"][1])
+    #inspect_kernel_memory_banks(operator, "gemv")
+    xrt_kernel = operator.xrt_kernels["gemv"][1]
+    #print(dir(xrt_kernel))
+
     save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col_1st")
     print(f"\nLatency: {latency_us:.1f} us")
-    gflops = (2.0 * M * K) / (latency_us * 1e-6) / 1e9
-    print(f"Throughput: {gflops:.6e} GFLOP/s")
-    print(f"Effective Bandwidth: {bandwidth_gbps:.6e} GB/s\n")
-
-    """
     golden_ref = generate_golden_reference(M=M, K=K,seed=100)
     input_buffers = {"matrix": golden_ref["A"].flatten(), "vector": golden_ref["B"]}
     output_buffers = {"output": golden_ref["C"]}
@@ -235,8 +229,26 @@ def test_gemv(M, K, num_aie_columns, tile_size, aie_context):
     )
     save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col_2nd")
     print(f"\nLatency: {latency_us:.1f} us")
+    golden_ref = generate_golden_reference(M=M//2, K=K,seed=100)
+    input_buffers = {"matrix": golden_ref["A"].flatten(), "vector": golden_ref["B"]}
+    output_buffers = {"output": golden_ref["C"]}
+    errors, latency_us, bandwidth_gbps = run_test(
+        operator2, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=0
+    )
+    save_trace(operator2, filename_suffix=f"3rd")
+    golden_ref = generate_golden_reference(M=M, K=K,seed=100)
+    input_buffers = {"matrix": golden_ref["A"].flatten(), "vector": golden_ref["B"]}
+    output_buffers = {"output": golden_ref["C"]}
+    errors, latency_us, bandwidth_gbps = run_test(
+        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=0
+    )
+    save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col_4th")
+    print(f"\nLatency: {latency_us:.1f} us")
+
+
+
     gflops = (2.0 * M * K) / (latency_us * 1e-6) / 1e9
     print(f"Throughput: {gflops:.6e} GFLOP/s")
     print(f"Effective Bandwidth: {bandwidth_gbps:.6e} GB/s\n")
-    """
+
     assert not errors, f"Test failed with errors: {errors}"

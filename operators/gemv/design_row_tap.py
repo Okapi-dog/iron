@@ -99,22 +99,26 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
                 placement=Tile(tile_col, tile_row)
             )
         )
+    rows_per_core = M // num_cores
 
     A_taps = [
         TensorAccessPattern(
             (M, K),
-            col * (M // num_cores) * K,
-            [1, 1, 1, (M // num_cores) * K],
-            [0, 0, 0, 1],
+            offset= i * K,                   # Core i は i 行目から開始
+            sizes= [1, 1, rows_per_core, K], # 1コアあたり rows_per_core 行分送る
+            strides=[0, 0, num_cores * K, 1], # 次の行へ行くときに num_cores 分飛ばす
         )
-        for col in range(num_cores)
+        for i in range(num_cores)
     ]
-    # Every column gets the whole of B, no TAP needed.
+
     C_taps = [
         TensorAccessPattern(
-            (1, M), col * (M // num_cores), [1, 1, 1, (M // num_cores)], [0, 0, 0, 1]
+            (1, M),
+            offset= i,                       # Core i は i 要素目から開始
+            sizes= [1, 1, rows_per_core, 1], 
+            strides=[0, 0, num_cores, 1]     # 書き戻し時も num_cores 分飛ばす
         )
-        for col in range(num_cores)
+        for i in range(num_cores)
     ]
 
     rt = Runtime()
@@ -173,13 +177,10 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
 
     with rt.sequence(L3_A_ty, L3_B_ty, L3_C_ty) as (A, B, C):
         if trace_ddr_id is not None:
-            offset_bytes = M * 2 #Cのサイズはbf16がM個
             rt.enable_trace(
-                #object_fifoのCのddr_idを指定する。よって、offsetはCのサイズになる。
                 trace_size=trace_size,
-                trace_offset=offset_bytes,
                 #workers=[w for w in [workers[0]] for _ in range(2)],
-                workers=[workers[0]],
+                workers=[workers[0],workers[0]],
                 coretile_events=my_core_events,
                 shimtile_events=my_shim_events,
                 coremem_events=my_coremem_events,

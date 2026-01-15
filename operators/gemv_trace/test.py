@@ -9,27 +9,45 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from operators.gemv.op import AIEGEMV
-from operators.gemv.reference import generate_golden_reference
+from operators.gemv_trace.op import AIEGEMV
+from operators.gemv_trace.reference import generate_golden_reference
 from operators.common.test_utils import run_test
 
 
 def generate_test_params(extensive=False):
     params = [
-        #(128, 128, 1, 32),
-        (2048, 8192, 1, 1),
-        (8192, 2048, 1, 4),
-        (2048, 8192, 2, 1),
-        (8192, 2048, 2, 4),
-        (2048, 8192, 4, 1),
-        (8192, 2048, 4, 4),
-        (2048, 8192, 8, 1),
-        (8192, 2048, 8, 4),
-        (2048, 2048, 1, 4),
+        (1920, 2048, 1, 1),
+        (1920, 2048, 1, 2),
+        (1920, 2048, 1, 3),
+        (1920, 2048, 1, 4),
+        (1920, 2048, 1, 6),
+        (1920, 2048, 2, 1),
+        (1920, 2048, 2, 2),
+        (1920, 2048, 2, 3),
+        (1920, 2048, 2, 4),
+        (1920, 2048, 2, 6),
+        (1920, 2048, 4, 1),
+        (1920, 2048, 4, 2),
+        (1920, 2048, 4, 3),
+        (1920, 2048, 4, 4),
+        (1920, 2048, 4, 6),
+        (1920, 2048, 8, 1),
+        (1920, 2048, 8, 2),
+        (1920, 2048, 8, 3),
+        (1920, 2048, 8, 4),
+        (1920, 2048, 8, 6),
+        (1920, 2048, 12, 1),
+        (1920, 2048, 15, 1),
+        (2048, 8192, 1, 4),
         (2048, 2048, 2, 4),
         (2048, 2048, 4, 4),
         (2048, 2048, 8, 4),
-        (32768, 2048, 8, 4),
+        (38400, 2048, 1, 4),
+        (38400, 2048, 2, 4),
+        (38400, 2048, 4, 4),
+        (38400, 2048, 8, 4),
+        (38400, 2048, 12, 4), 
+        (38400, 2048, 15, 4),
     ]
     names = [
         f"matrix_vector_mul_{M}x{K}_{tile_size}_{num_aie_columns}col"
@@ -52,9 +70,18 @@ all_params = [
 def save_trace(operator, filename_suffix=""):
     if operator.trace_ddr_id is not None:
         try:
-            trace_data = operator.read_buffer("trace", (operator.trace_size,), dtype=np.uint32)
-            
-            filename = f"trace_gemv_{filename_suffix}.txt"
+            # 1. まず、Trace部分の長さ（bfloat16換算の個数）を計算
+            tracesize_bf16 = operator.trace_size * 2
+            # 2. 出力バッファ全体を「M + trace」のサイズでbf16で読む
+            total_len = operator.M + tracesize_bf16
+            full_data = operator.read_buffer("output", (total_len,), dtype=np.uint16)
+            # 3. 後ろのTrace部分だけをスライス
+            trace_raw_u16 = full_data[operator.M:]
+            # 4. uint16 (2byte) x 2個 を uint32 (4byte) x 1個 に変換
+            trace_data = trace_raw_u16.view(np.uint32)
+
+            # これで trace_data は trace_size 個の uint32 配列になります
+            filename = "trace_gemv.txt"
             with open(filename, "w") as f:
                 for val in trace_data.flatten():
                     f.write(f"{val:08x}\n")
@@ -143,35 +170,17 @@ def test_gemv(M, K, num_aie_columns, tile_size, aie_context):
         num_aie_columns=num_aie_columns,
         tile_size=tile_size,
         context=aie_context,
-        trace_ddr_id=3,
-    )
-    operator2 = AIEGEMV(
-        M=M//2,
-        K=K,
-        num_aie_columns=num_aie_columns,
-        tile_size=tile_size,
-        context=aie_context,
-        trace_ddr_id=3,
+        trace_ddr_id=2,
     )
 
     input_buffers = {"matrix": golden_ref["A"].flatten(), "vector": golden_ref["B"]}
     output_buffers = {"output": golden_ref["C"]}
 
     errors, latency_us, bandwidth_gbps = run_test(
-        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=2 ,timed_iters=5
+        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=2 ,timed_iters=5, is_traceuse_same_ddr_id=True
     )
-
-    #print(operator.xrt_kernels["gemv"][1])
-    #inspect_kernel_memory_banks(operator, "gemv")
-    xrt_kernel = operator.xrt_kernels["gemv"][1]
-    #print(dir(xrt_kernel))
-
     save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col_1st")
     print(f"\nLatency: {latency_us:.1f} us")
-    golden_ref = generate_golden_reference(M=M, K=K,seed=100)
-    input_buffers = {"matrix": golden_ref["A"].flatten(), "vector": golden_ref["B"]}
-    output_buffers = {"output": golden_ref["C"]}
-
     gflops = (2.0 * M * K) / (latency_us * 1e-6) / 1e9
     print(f"Throughput: {gflops:.6e} GFLOP/s")
     print(f"Effective Bandwidth: {bandwidth_gbps:.6e} GB/s\n")

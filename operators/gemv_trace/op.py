@@ -69,7 +69,7 @@ class AIEGEMV(AIEOperatorBase):
 
         mlir_artifact = PythonGeneratedMLIRArtifact.new(
             f"{file_name_base}.mlir",
-            import_path=operator_dir / "design_old.py",
+            import_path=operator_dir / "design.py",
             callback_fn="my_matvec",
             callback_args=[
                 self.context.device_manager.device_type,
@@ -138,13 +138,13 @@ class AIEGEMV(AIEOperatorBase):
         )
         self.add_buffer("matrix", self.M * self.K, static_data=static_weights)
         self.add_buffer("vector", self.K)
-        self.add_buffer("output", self.M)
-        runlist_args = ["gemv", "matrix", "vector", "output"]
         if self.trace_ddr_id is not None:
-            # ワークアラウンド: 4倍確保
-            TRACE_BUFFER_SIZE = self.trace_size * 4
-            self.add_buffer("trace", TRACE_BUFFER_SIZE)
-            runlist_args.append("trace")
+            #tracebufferのサイズはtraceイベントの個数。traceイベントは4バイトなので、bf16の個数換算では2倍になる。
+            trace_elements_in_bf16 = self.trace_size * 2
+            self.add_buffer("output", self.M + trace_elements_in_bf16)
+        else:
+            self.add_buffer("output", self.M)
+        runlist_args = ["gemv", "matrix", "vector", "output"]
         self.add_to_runlist(*runlist_args)
 
     def forward(self, vector, matrix=None):
@@ -225,18 +225,25 @@ class AIEGEMV(AIEOperatorBase):
         t_end = time.perf_counter()
         if self.trace_ddr_id is not None:
             try:
-                trace_data = self.read_buffer("trace", (self.trace_size,), dtype=np.uint32)
-                
+                # 1. まず、Trace部分の長さ（bfloat16換算の個数）を計算
+                tracesize_bf16 = self.trace_size * 2
+                # 2. 出力バッファ全体を「M + trace」のサイズでbf16で読む
+                total_len = self.M + tracesize_bf16
+                full_data = self.read_buffer("output", (total_len,), dtype=np.uint16)
+                # 3. 後ろのTrace部分だけをスライス
+                trace_raw_u16 = full_data[self.M:]
+                # 4. uint16 (2byte) x 2個 を uint32 (4byte) x 1個 に変換
+                trace_data = trace_raw_u16.view(np.uint32)
+
+                # これで trace_data は trace_size 個の uint32 配列になります
                 filename = "trace_gemv.txt"
                 with open(filename, "w") as f:
                     for val in trace_data.flatten():
                         f.write(f"{val:08x}\n")
-                trace_suffix = f"_tr{self.trace_ddr_id}" if self.trace_ddr_id is not None else ""
-                file_name_base = (
-                    f"gemv_{self.num_aie_columns}c_{self.M}x{self.K}_{self.tile_size}t{trace_suffix}"
-                )
-                print(f"[AIEGEMV] Trace saved to {filename}.this program is {file_name_base}")
-                
+                print(f"[AIEGEMV] Trace saved to {filename}")
+                #トレースが何行まであるかを表示(空白行を除く)
+                non_empty_lines = [line for line in trace_data.flatten() if line != 0]
+                print(f"[AIEGEMV] Trace contains {len(non_empty_lines)} non-empty lines.")
             except Exception as e:
                 print(f"[AIEGEMV] Trace save failed: {e}")
 

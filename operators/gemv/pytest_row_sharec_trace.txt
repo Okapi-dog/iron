@@ -1,0 +1,1008 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /home/hitoshi/IRON/ironenv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/hitoshi/IRON
+configfile: pytest.ini
+plugins: anyio-4.12.0
+collecting ... collected 60 items
+
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_1_1col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_1920x2048_1t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_1_1col_1st.txt --mlir build/gemv_1c_1920x2048_1t_traceddr3.mlir --output trace_gemv_1920_2048_1_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_1_1col_1st.json
+
+Latency: 646.7 us
+Throughput: 1.215979e+01 GFLOP/s
+Effective Bandwidth: 1.217206e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_2_1col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_1920x2048_2t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_2_1col_1st.txt --mlir build/gemv_1c_1920x2048_2t_traceddr3.mlir --output trace_gemv_1920_2048_2_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_2_1col_1st.json
+
+Latency: 651.8 us
+Throughput: 1.206614e+01 GFLOP/s
+Effective Bandwidth: 1.207831e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_3_1col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_1920x2048_3t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_3_1col_1st.txt --mlir build/gemv_1c_1920x2048_3t_traceddr3.mlir --output trace_gemv_1920_2048_3_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_3_1col_1st.json
+
+Latency: 640.9 us
+Throughput: 1.227136e+01 GFLOP/s
+Effective Bandwidth: 1.228374e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_4_1col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_1920x2048_4t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_4_1col_1st.txt --mlir build/gemv_1c_1920x2048_4t_traceddr3.mlir --output trace_gemv_1920_2048_4_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_4_1col_1st.json
+
+Latency: 661.1 us
+Throughput: 1.189621e+01 GFLOP/s
+Effective Bandwidth: 1.190821e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_6_1col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_1920x2048_6t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_6_1col_1st.txt --mlir build/gemv_1c_1920x2048_6t_traceddr3.mlir --output trace_gemv_1920_2048_6_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_6_1col_1st.json
+
+Latency: 650.1 us
+Throughput: 1.209771e+01 GFLOP/s
+Effective Bandwidth: 1.210991e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_1_2col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 382.0 us
+Throughput: 2.058604e+01 GFLOP/s
+Effective Bandwidth: 2.060681e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_2_2col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_2c_1920x2048_2t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_2_2col_1st.txt --mlir build/gemv_2c_1920x2048_2t_traceddr3.mlir --output trace_gemv_1920_2048_2_2col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_2_2col_1st.json
+
+Latency: 378.4 us
+Throughput: 2.078182e+01 GFLOP/s
+Effective Bandwidth: 2.080279e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_3_2col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_2c_1920x2048_3t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_3_2col_1st.txt --mlir build/gemv_2c_1920x2048_3t_traceddr3.mlir --output trace_gemv_1920_2048_3_2col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_3_2col_1st.json
+
+Latency: 365.3 us
+Throughput: 2.152815e+01 GFLOP/s
+Effective Bandwidth: 2.154987e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_4_2col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 381.2 us
+Throughput: 2.063297e+01 GFLOP/s
+Effective Bandwidth: 2.065379e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_6_2col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_2c_1920x2048_6t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_6_2col_1st.txt --mlir build/gemv_2c_1920x2048_6t_traceddr3.mlir --output trace_gemv_1920_2048_6_2col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_6_2col_1st.json
+
+Latency: 372.7 us
+Throughput: 2.109906e+01 GFLOP/s
+Effective Bandwidth: 2.112036e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_1_4col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_4c_1920x2048_1t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_1_4col_1st.txt --mlir build/gemv_4c_1920x2048_1t_traceddr3.mlir --output trace_gemv_1920_2048_1_4col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_1_4col_1st.json
+
+Latency: 266.4 us
+Throughput: 2.952349e+01 GFLOP/s
+Effective Bandwidth: 2.955328e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_2_4col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 258.4 us
+Throughput: 3.043291e+01 GFLOP/s
+Effective Bandwidth: 3.046362e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_3_4col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 239.9 us
+Throughput: 3.278494e+01 GFLOP/s
+Effective Bandwidth: 3.281803e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_4_4col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 285.9 us
+Throughput: 2.750387e+01 GFLOP/s
+Effective Bandwidth: 2.753163e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_6_4col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 269.1 us
+Throughput: 2.922941e+01 GFLOP/s
+Effective Bandwidth: 2.925891e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_1_8col_1st.txt
+[AIEGEMV] Trace contains 64 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_8c_1920x2048_1t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_1_8col_1st.txt --mlir build/gemv_8c_1920x2048_1t_traceddr3.mlir --output trace_gemv_1920_2048_1_8col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_1_8col_1st.json
+
+Latency: 256.3 us
+Throughput: 3.068212e+01 GFLOP/s
+Effective Bandwidth: 3.071308e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_2_8col_1st.txt
+[AIEGEMV] Trace contains 64 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_8c_1920x2048_2t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_2_8col_1st.txt --mlir build/gemv_8c_1920x2048_2t_traceddr3.mlir --output trace_gemv_1920_2048_2_8col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_2_8col_1st.json
+
+Latency: 257.0 us
+Throughput: 3.059630e+01 GFLOP/s
+Effective Bandwidth: 3.062717e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_3_8col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_8c_1920x2048_3t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_3_8col_1st.txt --mlir build/gemv_8c_1920x2048_3t_traceddr3.mlir --output trace_gemv_1920_2048_3_8col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_3_8col_1st.json
+
+Latency: 248.8 us
+Throughput: 3.160697e+01 GFLOP/s
+Effective Bandwidth: 3.163887e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_4_8col_1st.txt
+[AIEGEMV] Trace contains 64 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_8c_1920x2048_4t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_4_8col_1st.txt --mlir build/gemv_8c_1920x2048_4t_traceddr3.mlir --output trace_gemv_1920_2048_4_8col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_4_8col_1st.json
+
+Latency: 233.2 us
+Throughput: 3.372552e+01 GFLOP/s
+Effective Bandwidth: 3.375955e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_1920_2048_6_8col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 223.9 us
+Throughput: 3.512802e+01 GFLOP/s
+Effective Bandwidth: 3.516347e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_2048x8192_4_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+FAILED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_2048_2048_4_2col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_2c_2048x2048_4t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_2048_2048_4_2col_1st.txt --mlir build/gemv_2c_2048x2048_4t_traceddr3.mlir --output trace_gemv_2048_2048_4_2col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_2048_2048_4_2col_1st.json
+
+Latency: 401.7 us
+Throughput: 2.088370e+01 GFLOP/s
+Effective Bandwidth: 2.090410e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_2048_2048_4_4col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 1052.0 us
+Throughput: 7.974266e+00 GFLOP/s
+Effective Bandwidth: 7.982053e+00 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_2048_2048_4_8col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 239.2 us
+Throughput: 3.506870e+01 GFLOP/s
+Effective Bandwidth: 3.510295e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_1col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_2col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_4col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_38400_2048_4_4col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_4c_38400x2048_4t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_38400_2048_4_4col_1st.txt --mlir build/gemv_4c_38400x2048_4t_traceddr3.mlir --output trace_gemv_38400_2048_4_4col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_38400_2048_4_4col_1st.json
+
+Latency: 3491.6 us
+Throughput: 4.504767e+01 GFLOP/s
+Effective Bandwidth: 4.507083e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_8col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_gemv_38400_2048_4_8col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 2861.1 us
+Throughput: 5.497435e+01 GFLOP/s
+Effective Bandwidth: 5.500263e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_12col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_15col0] Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index]
+core tile memory trace
+FAILED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_1col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_1_1col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_1920x2048_1t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_1_1col_1st.txt --mlir build/gemv_1c_1920x2048_1t_traceddr3.mlir --output trace_gemv_1920_2048_1_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_1_1col_1st.json
+
+Latency: 626.8 us
+Throughput: 1.254742e+01 GFLOP/s
+Effective Bandwidth: 1.256008e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_1col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_2_1col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_1920x2048_2t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_2_1col_1st.txt --mlir build/gemv_1c_1920x2048_2t_traceddr3.mlir --output trace_gemv_1920_2048_2_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_2_1col_1st.json
+
+Latency: 637.8 us
+Throughput: 1.232984e+01 GFLOP/s
+Effective Bandwidth: 1.234229e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_1col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_3_1col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_1920x2048_3t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_3_1col_1st.txt --mlir build/gemv_1c_1920x2048_3t_traceddr3.mlir --output trace_gemv_1920_2048_3_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_3_1col_1st.json
+
+Latency: 636.5 us
+Throughput: 1.235561e+01 GFLOP/s
+Effective Bandwidth: 1.236807e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_1col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_4_1col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_1920x2048_4t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_4_1col_1st.txt --mlir build/gemv_1c_1920x2048_4t_traceddr3.mlir --output trace_gemv_1920_2048_4_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_4_1col_1st.json
+
+Latency: 633.1 us
+Throughput: 1.242118e+01 GFLOP/s
+Effective Bandwidth: 1.243371e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_1col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_6_1col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_1920x2048_6t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_6_1col_1st.txt --mlir build/gemv_1c_1920x2048_6t_traceddr3.mlir --output trace_gemv_1920_2048_6_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_6_1col_1st.json
+
+Latency: 639.7 us
+Throughput: 1.229361e+01 GFLOP/s
+Effective Bandwidth: 1.230601e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_2col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_1_2col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 380.0 us
+Throughput: 2.069650e+01 GFLOP/s
+Effective Bandwidth: 2.071738e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_2col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_2_2col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_2c_1920x2048_2t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_2_2col_1st.txt --mlir build/gemv_2c_1920x2048_2t_traceddr3.mlir --output trace_gemv_1920_2048_2_2col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_2_2col_1st.json
+
+Latency: 372.6 us
+Throughput: 2.110422e+01 GFLOP/s
+Effective Bandwidth: 2.112552e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_2col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_3_2col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_2c_1920x2048_3t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_3_2col_1st.txt --mlir build/gemv_2c_1920x2048_3t_traceddr3.mlir --output trace_gemv_1920_2048_3_2col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_3_2col_1st.json
+
+Latency: 357.0 us
+Throughput: 2.202996e+01 GFLOP/s
+Effective Bandwidth: 2.205219e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_2col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_4_2col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 356.8 us
+Throughput: 2.203921e+01 GFLOP/s
+Effective Bandwidth: 2.206145e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_2col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_6_2col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_2c_1920x2048_6t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_6_2col_1st.txt --mlir build/gemv_2c_1920x2048_6t_traceddr3.mlir --output trace_gemv_1920_2048_6_2col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_6_2col_1st.json
+
+Latency: 368.2 us
+Throughput: 2.135691e+01 GFLOP/s
+Effective Bandwidth: 2.137846e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_4col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_1_4col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_4c_1920x2048_1t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_1_4col_1st.txt --mlir build/gemv_4c_1920x2048_1t_traceddr3.mlir --output trace_gemv_1920_2048_1_4col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_1_4col_1st.json
+
+Latency: 239.4 us
+Throughput: 3.284805e+01 GFLOP/s
+Effective Bandwidth: 3.288120e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_4col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_2_4col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 274.5 us
+Throughput: 2.864596e+01 GFLOP/s
+Effective Bandwidth: 2.867487e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_4col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_3_4col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 250.0 us
+Throughput: 3.145288e+01 GFLOP/s
+Effective Bandwidth: 3.148462e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_4col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_4_4col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 231.1 us
+Throughput: 3.403349e+01 GFLOP/s
+Effective Bandwidth: 3.406783e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_4col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_6_4col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 268.5 us
+Throughput: 2.928830e+01 GFLOP/s
+Effective Bandwidth: 2.931786e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_1_8col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_1_8col_1st.txt
+[AIEGEMV] Trace contains 64 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_8c_1920x2048_1t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_1_8col_1st.txt --mlir build/gemv_8c_1920x2048_1t_traceddr3.mlir --output trace_gemv_1920_2048_1_8col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_1_8col_1st.json
+
+Latency: 217.8 us
+Throughput: 3.611544e+01 GFLOP/s
+Effective Bandwidth: 3.615188e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_2_8col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_2_8col_1st.txt
+[AIEGEMV] Trace contains 64 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_8c_1920x2048_2t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_2_8col_1st.txt --mlir build/gemv_8c_1920x2048_2t_traceddr3.mlir --output trace_gemv_1920_2048_2_8col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_2_8col_1st.json
+
+Latency: 220.5 us
+Throughput: 3.566004e+01 GFLOP/s
+Effective Bandwidth: 3.569603e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_3_8col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_3_8col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_8c_1920x2048_3t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_3_8col_1st.txt --mlir build/gemv_8c_1920x2048_3t_traceddr3.mlir --output trace_gemv_1920_2048_3_8col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_3_8col_1st.json
+
+Latency: 229.0 us
+Throughput: 3.434262e+01 GFLOP/s
+Effective Bandwidth: 3.437728e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_4_8col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_4_8col_1st.txt
+[AIEGEMV] Trace contains 64 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_8c_1920x2048_4t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_1920_2048_4_8col_1st.txt --mlir build/gemv_8c_1920x2048_4t_traceddr3.mlir --output trace_gemv_1920_2048_4_8col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_1920_2048_4_8col_1st.json
+
+Latency: 243.7 us
+Throughput: 3.226573e+01 GFLOP/s
+Effective Bandwidth: 3.229829e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1920x2048_6_8col1] [AIEGEMV] Trace saved to trace_gemv_1920_2048_6_8col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 215.5 us
+Throughput: 3.649742e+01 GFLOP/s
+Effective Bandwidth: 3.653425e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_2048x8192_4_1col1] FAILED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_2col1] [AIEGEMV] Trace saved to trace_gemv_2048_2048_4_2col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_2c_2048x2048_4t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_2048_2048_4_2col_1st.txt --mlir build/gemv_2c_2048x2048_4t_traceddr3.mlir --output trace_gemv_2048_2048_4_2col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_2048_2048_4_2col_1st.json
+
+Latency: 379.2 us
+Throughput: 2.212110e+01 GFLOP/s
+Effective Bandwidth: 2.214270e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_4col1] [AIEGEMV] Trace saved to trace_gemv_2048_2048_4_4col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 257.4 us
+Throughput: 3.258914e+01 GFLOP/s
+Effective Bandwidth: 3.262097e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_2048x2048_4_8col1] [AIEGEMV] Trace saved to trace_gemv_2048_2048_4_8col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 238.1 us
+Throughput: 3.523664e+01 GFLOP/s
+Effective Bandwidth: 3.527105e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_1col1] FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_2col1] FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_4col1] [AIEGEMV] Trace saved to trace_gemv_38400_2048_4_4col_1st.txt
+[AIEGEMV] Trace contains 32768 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_4c_38400x2048_4t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_gemv_38400_2048_4_4col_1st.txt --mlir build/gemv_4c_38400x2048_4t_traceddr3.mlir --output trace_gemv_38400_2048_4_4col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_38400_2048_4_4col_1st.json
+
+Latency: 3341.5 us
+Throughput: 4.707092e+01 GFLOP/s
+Effective Bandwidth: 4.709513e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_8col1] [AIEGEMV] Trace saved to trace_gemv_38400_2048_4_8col_1st.txt
+[AIEGEMV] Trace contains 0 non-empty lines.
+
+Latency: 2891.0 us
+Throughput: 5.440638e+01 GFLOP/s
+Effective Bandwidth: 5.443436e+01 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_12col1] FAILED
+test.py::test_gemv[matrix_vector_mul_38400x2048_4_15col1] FAILED
+
+=================================== FAILURES ===================================
+________________ test_gemv[matrix_vector_mul_2048x8192_4_1col0] ________________
+test.py:220: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv/build/gemv_1c_2048x8192_4t_traceddr3.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x400-0x103FF 	(65536 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0x10400-0x203FF 	(65536 bytes)
+E     	B_shared_cons_buff_0 	: 0x20400-0x243FF 	(16384 bytes)
+E     	C_L1L3_0_buff_0 	: 0x24400-0x253FF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_1col0] ________________
+test.py:220: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv/build/gemv_1c_38400x2048_4t_traceddr3.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	C_L1L3_0_buff_0 	: 0x400-0x12FFF 	(76800 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x13000-0x16FFF 	(16384 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0x17000-0x1AFFF 	(16384 bytes)
+E     	B_shared_cons_buff_0 	: 0x1B000-0x1BFFF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_2col0] ________________
+test.py:220: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv/build/gemv_2c_38400x2048_4t_traceddr3.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	C_L1L3_0_buff_0 	: 0x400-0x99FF 	(38400 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x9A00-0xD9FF 	(16384 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0xDA00-0x119FF 	(16384 bytes)
+E     	B_shared_0_cons_buff_0 	: 0x11A00-0x129FF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_12col0] _______________
+test.py:220: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv/build/gemv_12c_38400x2048_4t_traceddr3.mlir failed: <unknown>:0: error: 'aie.masterset' op targets same destination South: 3 as another connect or masterset operation
+E   <unknown>:0: note: see current operation: %286 = "aie.masterset"(%284) <{dest_bundle = 3 : i32, dest_channel = 3 : i32, keep_pkt_header = true}> : (index) -> index
+E   
+E   Error encountered while running: aie-opt --aie-create-pathfinder-flows /home/hitoshi/IRON/operators/gemv/build/gemv_12c_38400x2048_4t_traceddr3.mlir.prj/input_with_addresses.mlir -o /home/hitoshi/IRON/operators/gemv/build/gemv_12c_38400x2048_4t_traceddr3.mlir.prj/input_physical.mlir
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_15col0] _______________
+test.py:220: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv/build/gemv_15c_38400x2048_4t_traceddr3.mlir failed: <unknown>:0: error: 'aie.masterset' op targets same destination South: 3 as another connect or masterset operation
+E   <unknown>:0: note: see current operation: %340 = "aie.masterset"(%338) <{dest_bundle = 3 : i32, dest_channel = 3 : i32, keep_pkt_header = true}> : (index) -> index
+E   
+E   Error encountered while running: aie-opt --aie-create-pathfinder-flows /home/hitoshi/IRON/operators/gemv/build/gemv_15c_38400x2048_4t_traceddr3.mlir.prj/input_with_addresses.mlir -o /home/hitoshi/IRON/operators/gemv/build/gemv_15c_38400x2048_4t_traceddr3.mlir.prj/input_physical.mlir
+________________ test_gemv[matrix_vector_mul_2048x8192_4_1col1] ________________
+test.py:220: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv/build/gemv_1c_2048x8192_4t_traceddr3.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x400-0x103FF 	(65536 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0x10400-0x203FF 	(65536 bytes)
+E     	B_shared_cons_buff_0 	: 0x20400-0x243FF 	(16384 bytes)
+E     	C_L1L3_0_buff_0 	: 0x24400-0x253FF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_1col1] ________________
+test.py:220: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv/build/gemv_1c_38400x2048_4t_traceddr3.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	C_L1L3_0_buff_0 	: 0x400-0x12FFF 	(76800 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x13000-0x16FFF 	(16384 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0x17000-0x1AFFF 	(16384 bytes)
+E     	B_shared_cons_buff_0 	: 0x1B000-0x1BFFF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_2col1] ________________
+test.py:220: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv/build/gemv_2c_38400x2048_4t_traceddr3.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: "-":3:17: 'aie.tile' op allocated buffers exceeded available memory
+E     
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+E    note: "-":3:17: MemoryMap:
+E     	(stack) 	: 0x0-0x3FF 	(1024 bytes)
+E     	C_L1L3_0_buff_0 	: 0x400-0x99FF 	(38400 bytes)
+E     	A_L3L1_0_cons_buff_0 	: 0x9A00-0xD9FF 	(16384 bytes)
+E     	A_L3L1_0_cons_buff_1 	: 0xDA00-0x119FF 	(16384 bytes)
+E     	B_shared_0_cons_buff_0 	: 0x11A00-0x129FF 	(4096 bytes)
+E     
+E   error: "-":3:17: 'aie.tile' op Basic sequential allocation also failed.
+E    note: "-":3:17: see current operation: %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> {controller_id = #aie.packet_info<pkt_type = 0, pkt_id = 27>} : () -> index
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_12col1] _______________
+test.py:220: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv/build/gemv_12c_38400x2048_4t_traceddr3.mlir failed: <unknown>:0: error: 'aie.masterset' op targets same destination South: 3 as another connect or masterset operation
+E   <unknown>:0: note: see current operation: %286 = "aie.masterset"(%284) <{dest_bundle = 3 : i32, dest_channel = 3 : i32, keep_pkt_header = true}> : (index) -> index
+E   
+E   Error encountered while running: aie-opt --aie-create-pathfinder-flows /home/hitoshi/IRON/operators/gemv/build/gemv_12c_38400x2048_4t_traceddr3.mlir.prj/input_with_addresses.mlir -o /home/hitoshi/IRON/operators/gemv/build/gemv_12c_38400x2048_4t_traceddr3.mlir.prj/input_physical.mlir
+_______________ test_gemv[matrix_vector_mul_38400x2048_4_15col1] _______________
+test.py:220: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:89: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/gemv/build/gemv_15c_38400x2048_4t_traceddr3.mlir failed: <unknown>:0: error: 'aie.masterset' op targets same destination South: 3 as another connect or masterset operation
+E   <unknown>:0: note: see current operation: %340 = "aie.masterset"(%338) <{dest_bundle = 3 : i32, dest_channel = 3 : i32, keep_pkt_header = true}> : (index) -> index
+E   
+E   Error encountered while running: aie-opt --aie-create-pathfinder-flows /home/hitoshi/IRON/operators/gemv/build/gemv_15c_38400x2048_4t_traceddr3.mlir.prj/input_with_addresses.mlir -o /home/hitoshi/IRON/operators/gemv/build/gemv_15c_38400x2048_4t_traceddr3.mlir.prj/input_physical.mlir
+=========================== short test summary info ============================
+FAILED test.py::test_gemv[matrix_vector_mul_2048x8192_4_1col0] - RuntimeError...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_1col0] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_2col0] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_12col0] - RuntimeErr...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_15col0] - RuntimeErr...
+FAILED test.py::test_gemv[matrix_vector_mul_2048x8192_4_1col1] - RuntimeError...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_1col1] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_2col1] - RuntimeErro...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_12col1] - RuntimeErr...
+FAILED test.py::test_gemv[matrix_vector_mul_38400x2048_4_15col1] - RuntimeErr...
+=================== 10 failed, 50 passed in 87.11s (0:01:27) ===================

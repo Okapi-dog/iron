@@ -61,7 +61,7 @@ class AIEGEMV(AIEOperatorBase):
         AIEOperatorBase.__init__(self, context=context)
 
     def get_artifacts(self, prefix="gemv_"):
-        trace_suffix = f"_tr{self.trace_ddr_id}" if self.trace_ddr_id is not None else ""
+        trace_suffix = f"_traceddr{self.trace_ddr_id}" if self.trace_ddr_id is not None else ""
         operator_dir = Path(__file__).parent
         file_name_base = (
             f"{prefix}{self.num_aie_columns}c_{self.M}x{self.K}_{self.tile_size}t{trace_suffix}"
@@ -69,7 +69,7 @@ class AIEGEMV(AIEOperatorBase):
 
         mlir_artifact = PythonGeneratedMLIRArtifact.new(
             f"{file_name_base}.mlir",
-            import_path=operator_dir / "design.py",
+            import_path=operator_dir / "design_row_sharec.py",
             callback_fn="my_matvec",
             callback_args=[
                 self.context.device_manager.device_type,
@@ -141,7 +141,7 @@ class AIEGEMV(AIEOperatorBase):
         self.add_buffer("output", self.M)
         runlist_args = ["gemv", "matrix", "vector", "output"]
         if self.trace_ddr_id is not None:
-            # ワークアラウンド: 4倍確保
+            # ワークアラウンド: 2倍確保(bf16換算)
             TRACE_BUFFER_SIZE = self.trace_size * 4
             self.add_buffer("trace", TRACE_BUFFER_SIZE)
             runlist_args.append("trace")
