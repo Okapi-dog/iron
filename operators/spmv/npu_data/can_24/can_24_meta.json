@@ -1,0 +1,9 @@
+{
+    "name": "can_24",
+    "rows": 24,
+    "cols": 24,
+    "ell_width": 9,
+    "buffer_size(bytes)": 864,
+    "buffer_size(bytes in bf16 dense matrix)": 1152,
+    "dtype": "int16 (indices and bf16 values interleaved)"
+}

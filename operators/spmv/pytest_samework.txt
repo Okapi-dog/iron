@@ -1,0 +1,228 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /home/hitoshi/IRON/ironenv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/hitoshi/IRON
+configfile: pytest.ini
+plugins: anyio-4.12.0
+collecting ... collected 6 items
+
+test.py::test_gemv[matrix_vector_mul_12x36_1_1col0] Loaded data shape: (432,), dtype: int16
+using scalar matvec kernel
+Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %3 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index]
+core tile memory trace
+[AIEGEMV] Trace saved to trace_spmv_12_36_1_1col_1st.txt
+[AIEGEMV] Trace contains 1728 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_12x36_1t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_spmv_12_36_1_1col_1st.txt --mlir build/gemv_1c_12x36_1t_traceddr3.mlir --output trace_gemv_12_36_1_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_12_36_1_1col_1st.json
+
+Latency: 58.6 us
+Throughput: 1.474175e-02 GFLOP/s
+Effective Bandwidth: 1.637972e-02 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1x432_1_1col0] Loaded data shape: (432,), dtype: int16
+using scalar matvec kernel
+Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %3 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index]
+core tile memory trace
+FAILED
+test.py::test_gemv[matrix_vector_mul_16x27_1_1col0] Loaded data shape: (432,), dtype: int16
+using scalar matvec kernel
+Added trace shim tile: tile(col=0, row=0)
+Tiles to trace: [%0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %0 = "aie.tile"() <{col = 0 : i32, row = 2 : i32}> : () -> index, %3 = "aie.tile"() <{col = 0 : i32, row = 0 : i32}> : () -> index]
+core tile memory trace
+FAILED
+test.py::test_gemv[matrix_vector_mul_12x36_1_1col1] Loaded data shape: (432,), dtype: int16
+[AIEGEMV] Trace saved to trace_spmv_12_36_1_1col_1st.txt
+[AIEGEMV] Trace contains 1728 non-empty lines.
+[AIEGEMV] Using MLIR file: build/gemv_1c_12x36_1t_traceddr3.mlir
+[AIEGEMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_spmv_12_36_1_1col_1st.txt --mlir build/gemv_1c_12x36_1t_traceddr3.mlir --output trace_gemv_12_36_1_1col_1st.json
+[AIEGEMV] Trace parsed successfully. Output: trace_gemv_12_36_1_1col_1st.json
+
+Latency: 64.4 us
+Throughput: 1.341033e-02 GFLOP/s
+Effective Bandwidth: 1.490036e-02 GB/s
+
+PASSED
+test.py::test_gemv[matrix_vector_mul_1x432_1_1col1] Loaded data shape: (432,), dtype: int16
+FAILED
+test.py::test_gemv[matrix_vector_mul_16x27_1_1col1] Loaded data shape: (432,), dtype: int16
+FAILED
+
+=================================== FAILURES ===================================
+__________________ test_gemv[matrix_vector_mul_1x432_1_1col0] __________________
+test.py:134: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:90: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/spmv/build/gemv_1c_1x432_1t_traceddr3.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: unknown: 'aie.dma_bd' op transfer length must be multiple of 4 (i.e., represent 4 byte aligned address)
+E    note: unknown: see current operation: "aie.dma_bd"(%4) <{len = 1 : i32, offset = 0 : i32}> : (memref<1xbf16>) -> ()
+__________________ test_gemv[matrix_vector_mul_16x27_1_1col0] __________________
+test.py:134: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:90: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/spmv/build/gemv_1c_16x27_1t_traceddr3.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: unknown: 'aie.dma_bd' op transfer length must be multiple of 4 (i.e., represent 4 byte aligned address)
+E    note: unknown: see current operation: "aie.dma_bd"(%12) <{len = 27 : i32, offset = 0 : i32}> : (memref<27xbf16>) -> ()
+__________________ test_gemv[matrix_vector_mul_1x432_1_1col1] __________________
+test.py:134: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:90: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/spmv/build/gemv_1c_1x432_1t_traceddr3.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: unknown: 'aie.dma_bd' op transfer length must be multiple of 4 (i.e., represent 4 byte aligned address)
+E    note: unknown: see current operation: "aie.dma_bd"(%4) <{len = 1 : i32, offset = 0 : i32}> : (memref<1xbf16>) -> ()
+__________________ test_gemv[matrix_vector_mul_16x27_1_1col1] __________________
+test.py:134: in test_gemv
+    errors, latency_us, bandwidth_gbps = run_test(
+../common/test_utils.py:90: in run_test
+    operator.context.compile_all()
+../common/aie_context.py:40: in compile_all
+    op.compile()
+../common/aie_base.py:151: in compile
+    comp.compile(compilation_rules, work_list)
+../common/compilation.py:598: in compile
+    success, artifacts = apply_rules(rules, remaining)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:585: in apply_rules
+    artifacts = rule.compile(artifacts)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+../common/compilation.py:408: in compile
+    raise RuntimeError(
+E   RuntimeError: MLIR compilation for /home/hitoshi/IRON/operators/spmv/build/gemv_1c_16x27_1t_traceddr3.mlir failed: Traceback (most recent call last):
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/bin/aiecc.py", line 12, in <module>
+E       main()
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1948, in main
+E       run(module_str)
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1922, in run
+E       asyncio.run(runner.run_flow())
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+E       return runner.run(main)
+E              ^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+E       return self._loop.run_until_complete(task)
+E              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+E       return future.result()
+E              ^^^^^^^^^^^^^^^
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 1626, in run_flow
+E       run_passes(
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 476, in run_passes
+E       raise e
+E     File "/home/hitoshi/IRON/ironenv/lib/python3.12/site-packages/mlir_aie/python/aie/compiler/aiecc/main.py", line 473, in run_passes
+E       pm.run(module.operation)
+E   aie._mlir_libs._site_initialize.<locals>.MLIRError: Failure while executing pass pipeline:
+E   error: unknown: 'aie.dma_bd' op transfer length must be multiple of 4 (i.e., represent 4 byte aligned address)
+E    note: unknown: see current operation: "aie.dma_bd"(%12) <{len = 27 : i32, offset = 0 : i32}> : (memref<27xbf16>) -> ()
+=========================== short test summary info ============================
+FAILED test.py::test_gemv[matrix_vector_mul_1x432_1_1col0] - RuntimeError: ML...
+FAILED test.py::test_gemv[matrix_vector_mul_16x27_1_1col0] - RuntimeError: ML...
+FAILED test.py::test_gemv[matrix_vector_mul_1x432_1_1col1] - RuntimeError: ML...
+FAILED test.py::test_gemv[matrix_vector_mul_16x27_1_1col1] - RuntimeError: ML...
+========================= 4 failed, 2 passed in 6.02s ==========================
