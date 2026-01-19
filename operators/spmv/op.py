@@ -21,13 +21,14 @@ from operators.common import (
 from operators.common.utils import torch_to_numpy
 
 
-class AIEGEMV(AIEOperatorBase):
+class AIESPMV(AIEOperatorBase):
     """AIE-accelerated General Matrix-Vector/Vector-Matrix Multiplication layer"""
 
     def __init__(
         self,
         M,
         K,
+        ell_width,
         num_aie_columns=1,
         tile_size=1,
         is_mv=True,
@@ -39,6 +40,7 @@ class AIEGEMV(AIEOperatorBase):
 
         self.M = M  # matrix rows  (if is_mv=False, matrix columns)
         self.K = K  # matrix columns, vector rows  (if is_mv=False, matrix rows, vector columns)
+        self.ell_width = ell_width
         self.num_aie_columns = num_aie_columns
         self.tile_size = tile_size
         self.is_mv = is_mv
@@ -60,11 +62,11 @@ class AIEGEMV(AIEOperatorBase):
 
         AIEOperatorBase.__init__(self, context=context)
 
-    def get_artifacts(self, prefix="gemv_"):
+    def get_artifacts(self, prefix="spmv_"):
         trace_suffix = f"_traceddr{self.trace_ddr_id}" if self.trace_ddr_id is not None else ""
         operator_dir = Path(__file__).parent
         file_name_base = (
-            f"{prefix}{self.num_aie_columns}c_{self.M}x{self.K}_{self.tile_size}t{trace_suffix}"
+            f"{prefix}{self.num_aie_columns}c_{self.M}x{self.K}_{self.ell_width}ell_{self.tile_size}t{trace_suffix}"
         )
 
         mlir_artifact = PythonGeneratedMLIRArtifact.new(
@@ -76,6 +78,7 @@ class AIEGEMV(AIEOperatorBase):
                 self.num_aie_columns,
                 self.M,
                 self.K,
+                self.ell_width,
                 self.tile_size,
                 self.trace_ddr_id,
                 self.trace_size,
@@ -121,6 +124,7 @@ class AIEGEMV(AIEOperatorBase):
         # ---
         static_weights = None
         if self.weight is not None:
+            raise AssertionError("Static weight is not supported in SpMV.")
             # Kernel expects row-major weights, so might need to transpose;
             # also might need to transpose if is_mv
             if self.is_mv:
@@ -131,15 +135,15 @@ class AIEGEMV(AIEOperatorBase):
             if isinstance(static_weights, torch.Tensor):
                 static_weights = torch_to_numpy(static_weights)
         self.add_kernel(
-            "gemv",
+            "spmv",
             self.xclbin_artifact,
             self.xclbin_artifact.kernel_name,
             self.insts_artifact,
         )
-        self.add_buffer("sparse_matrix", self.M * self.K, static_data=static_weights)
+        self.add_buffer("sparse_matrix", self.M * self.ell_width * 2, static_data=static_weights)
         self.add_buffer("vector", self.K)
         self.add_buffer("output", self.M)
-        runlist_args = ["gemv", "sparse_matrix", "vector", "output"]
+        runlist_args = ["spmv", "sparse_matrix", "vector", "output"]
         if self.trace_ddr_id is not None:
             # ワークアラウンド: 2倍確保(bf16換算)
             TRACE_BUFFER_SIZE = self.trace_size * 4
@@ -148,6 +152,7 @@ class AIEGEMV(AIEOperatorBase):
         self.add_to_runlist(*runlist_args)
 
     def forward(self, vector, matrix=None):
+        raise NotImplementedError("SpMV operator does not support dense matrix input.")
         """Forward pass through GEMV operation
 
         Args:

@@ -22,7 +22,7 @@ from aie.utils.trace_events_enum import CoreEvent, MemEvent, ShimTileEvent, MemT
 
 
 
-def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
+def my_matvec(dev, num_cores, M, K, ell_width, m, trace_ddr_id=None, trace_size=65536):
     vectorized = False # ベクトル演算しない。CSRをやるときのシミュレーション
     dtype_in = np.dtype[bfloat16]
     dtype_in_str = "bf16"
@@ -39,10 +39,10 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
         device_cols=8
     else:
         raise AssertionError(f"Unsupported device type: {dev}")
-    L1_A_ty = np.ndarray[(m * K,), dtype_in]
+    L1_A_ty = np.ndarray[(m * ell_width*2,), dtype_in]
     L1_B_ty = np.ndarray[(K,), dtype_in]
     L1_C_ty = np.ndarray[(M // num_cores,), dtype_out]
-    L3_A_ty = np.ndarray[(M * K,), dtype_in]
+    L3_A_ty = np.ndarray[(M * ell_width * 2,), dtype_in]
     L3_B_ty = np.ndarray[(K,), dtype_in]
     L3_C_ty = np.ndarray[(M,), dtype_out]
 
@@ -71,7 +71,7 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
             for i_idx in range_(M // m // num_cores):
                 a = A_L3L1_fifo.acquire(1)
                 i_i32 = index.casts(T.i32(), i_idx)
-                matvec(m, K, i_i32, a, b, c)
+                #matvec(m, K, i_i32, a, b, c)
                 A_L3L1_fifo.release(1)
             C_L1L3_fifo.release(1)
             B_L3L1_fifo.release(1)
@@ -103,9 +103,9 @@ def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
 
     A_taps = [
         TensorAccessPattern(
-            (M, K),
-            col * (M // num_cores) * K,
-            [1, 1, 1, (M // num_cores) * K],
+            (M, ell_width *2),
+            col * (M // num_cores) * ell_width *2,
+            [1, 1, 1, (M // num_cores) * ell_width *2],
             [0, 0, 0, 1],
         )
         for col in range(num_cores)
@@ -231,6 +231,7 @@ def main():
     argparser.add_argument("--dev", type=str, choices=["npu", "npu2"], default="npu")
     argparser.add_argument("-M", type=int)
     argparser.add_argument("-K", type=int)
+    argparser.add_argument("-ell_width", type=int)
     argparser.add_argument("-m", type=int)
     argparser.add_argument("--cols", type=int)
     argparser.add_argument(
@@ -240,7 +241,7 @@ def main():
         help="Output file path for the generated MLIR module",
     )
     args = argparser.parse_args()
-    module = my_matvec(args.dev, args.cols, args.M, args.K, args.m)
+    module = my_matvec(args.dev, args.cols, args.M, args.K, args.ell_width, args.m)
 
     output_file_path = Path(args.output_file_path)
 
