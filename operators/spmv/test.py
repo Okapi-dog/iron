@@ -7,28 +7,142 @@ import pytest
 from pathlib import Path
 import numpy as np
 import subprocess
+import json
+import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from operators.spmv.op import AIESPMV
-from operators.spmv.reference import generate_golden_reference
+from operators.spmv.reference import generate_reference_from_mtx
 from operators.common.test_utils import run_test
 
 
-def generate_test_params(extensive=False):
-    params = [
-        #(24,24,9,1,1), # can_24 matrix
-        (1404, 1404,31,1,1), # Binaryalphadigs_10NN matrix
-    ]
-    names = [
-        f"matrix_vector_mul_{M}x{K}_{ell_width}ell_{tile_size}_{num_aie_columns}col"
-        for M, K, ell_width, num_aie_columns, tile_size in params
-    ]
+# ==========================================
+# 1. テスト設定 (ここを編集してテストケースを追加・変更)
+# ==========================================
+# フォーマット: (matrix_name, tile_size, num_aie_columns)
+
+REGULAR_TEST_CONFIGS = [
+    ("mnist_test_norm_10NN", 1, 1),
+    ("mnist_test_norm_10NN", 1, 2),
+    ("mnist_test_norm_10NN", 1, 4),
+    ("mnist_test_norm_10NN", 1, 8),
+    # ("can_24", 1, 1), # 必要であればコメントアウトを外す
+]
+
+EXTENSIVE_TEST_CONFIGS = [
+    # 長時間テストや詳細テスト用
+    # ("mnist_test_norm_10NN", 1, 2), 
+    # ("mnist_test_norm_10NN", 1, 4),
+]
+
+# ==========================================
+# 2. ヘルパー関数 (JSON読み込み・スキャン)
+# ==========================================
+
+def load_matrix_metadata(matrix_dir: Path):
+    """
+    指定されたディレクトリ内の *_meta.json を読み込み、情報を辞書で返す。
+    必要なファイルが存在しない場合は None を返す。
+    """
+    if not matrix_dir.is_dir():
+        return None
+
+    # メタデータ(JSON)を探す
+    json_files = list(matrix_dir.glob("*_meta.json"))
+    if not json_files:
+        return None
+    
+    try:
+        with open(json_files[0], 'r') as f:
+            meta_data = json.load(f)
+    except Exception as e:
+        print(f"[ERROR] Failed to load JSON in {matrix_dir}: {e}")
+        return None
+
+    # 行列名を取得 (JSONにない場合はフォルダ名)
+    matrix_name = meta_data.get("name", matrix_dir.name)
+    
+    # int16 npyファイルのパスを確認
+    npy_path = matrix_dir / f"{matrix_name}_xdna_int16.npy"
+    if not npy_path.exists():
+        print(f"[WARNING] NPY file not found for {matrix_name}: {npy_path}")
+        return None
+
+    # 必要な情報を辞書にまとめる
+    return {
+        "name": matrix_name,
+        "rows": meta_data["rows"],
+        "cols": meta_data["cols"],
+        "ell_width": meta_data["ell_width"],
+        "npy_path": str(npy_path)
+    }
+
+def scan_available_matrices(base_dir: Path):
+    """
+    base_dir 以下の全ディレクトリを走査し、利用可能な行列データを辞書化して返す。
+    Returns:
+        dict: { "matrix_name": matrix_metadata_dict, ... }
+    """
+    matrix_map = {}
+    if not base_dir.exists():
+        print(f"[WARNING] Directory {base_dir} not found.")
+        return matrix_map
+
+    for item in base_dir.iterdir():
+        meta = load_matrix_metadata(item)
+        if meta:
+            matrix_map[meta["name"]] = meta
+            
+    return matrix_map
+
+# ==========================================
+# 3. パラメータ生成ロジック
+# ==========================================
+
+def generate_test_params(test_configs):
+    """
+    テスト設定リストと、ディスク上のデータを照合してpytest用のパラメータを生成する。
+    """
+    base_dir = Path("npu_data")
+    
+    # 1. 利用可能な行列データをスキャン
+    available_matrices = scan_available_matrices(base_dir)
+    
+    params = []
+    names = []
+
+    # 2. 設定リストに基づいてパラメータを構築
+    for matrix_name, tile_size, num_aie_columns in test_configs:
+        
+        # 設定にある名前が、実際のデータフォルダに存在するか確認
+        if matrix_name not in available_matrices:
+            print(f"[SKIP] Matrix '{matrix_name}' not found in {base_dir}. Skipping.")
+            continue
+            
+        meta = available_matrices[matrix_name]
+        
+        # param: (npy_path, M, K, ell_width, num_aie_columns, tile_size)
+        params.append((
+            meta["npy_path"],
+            meta["rows"],
+            meta["cols"],
+            meta["ell_width"],
+            num_aie_columns,
+            tile_size
+        ))
+        
+        # テストケース名
+        names.append(
+            f"{matrix_name}_{meta['rows']}x{meta['cols']}_{meta['ell_width']}ell_{tile_size}t_{num_aie_columns}col"
+        )
+        
     return params, names
 
 
-regular_params, regular_names = generate_test_params(extensive=False)
-extensive_params, extensive_names = generate_test_params(extensive=True)
+# パラメータ生成の実行
+regular_params, regular_names = generate_test_params(REGULAR_TEST_CONFIGS)
+extensive_params, extensive_names = generate_test_params(EXTENSIVE_TEST_CONFIGS)
 
 # Combine params with marks - extensive params get pytest.mark.extensive
 all_params = [
@@ -112,8 +226,8 @@ def save_trace(operator, filename_suffix=""):
     Bandwidth=r"Effective Bandwidth: (?P<value>[\d\.e\+-]+) GB/s",
     Throughput=r"Throughput: (?P<value>[\d\.e\+-]+) GFLOP/s",
 )
-@pytest.mark.parametrize("M,K,ell_width,num_aie_columns,tile_size", all_params)
-def test_spmv(M, K, ell_width, num_aie_columns, tile_size, aie_context):
+@pytest.mark.parametrize("npy_path,M,K,ell_width,num_aie_columns,tile_size", all_params)
+def test_spmv(npy_path, M, K, ell_width, num_aie_columns, tile_size, aie_context):
 
     operator = AIESPMV(
         M=M,
@@ -126,8 +240,9 @@ def test_spmv(M, K, ell_width, num_aie_columns, tile_size, aie_context):
         trace_size=8192*4,
     )
 
-    golden_ref = generate_golden_reference(M=M, K=K)
-    npu_data = np.load("npu_data/Binaryalphadigs_10NN/Binaryalphadigs_10NN_xdna_int16.npy")
+    golden_ref = generate_reference_from_mtx(npy_path=npy_path)
+    print(f"Loading matrix from: {npy_path}")
+    npu_data = np.load(npy_path)
     #ellデータの形状を確認(ell_widthが合っているか)
     print(f"NPU Data Shape: {npu_data.shape}")
     print(f"ell_width: {ell_width}")
@@ -135,10 +250,10 @@ def test_spmv(M, K, ell_width, num_aie_columns, tile_size, aie_context):
     if npu_data.shape[0]/(ell_width*2) != M:
         raise AssertionError("NPU data shape does not match expected matrix dimensions.")
 
-    input_buffers = {"sparse_matrix": npu_data, "vector": golden_ref["B"]}
+    input_buffers = {"sparse_matrix": npu_data, "vector": golden_ref["B"].to(torch.bfloat16)}
     output_buffers = {"output": golden_ref["C"]}
     errors, latency_us, bandwidth_gbps = run_test(
-        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=2,verify=False
+        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-4, warmup_iters=2,verify=True
     )
     save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col_1st")
     print(f"\nLatency: {latency_us:.1f} us")

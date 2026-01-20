@@ -126,6 +126,7 @@ def process_matrix_for_npu(group, name, output_dir="npu_data"):
         "ell_width": int(max_nnz),
         "buffer_size(bytes)": int(npu_buffer.size)*2,
         "buffer_size(bytes in bf16 dense matrix)": int(n_rows)*int(csr.shape[1])*2,
+        "nonzero%": csr.nnz / (n_rows * csr.shape[1])*100,
         "dtype": "int16 (indices and bf16 values interleaved)"
     }
     
@@ -160,8 +161,8 @@ def print_npu_matrix(matrix_npy_path,cols):
 if __name__ == "__main__":
     # 例: HB/can_24
     #process_matrix_for_npu("HB", "can_24")
-    process_matrix_for_npu("ML_Graph", "Binaryalphadigs_10NN") 
-    print_npu_matrix("npu_data/Binaryalphadigs_10NN/Binaryalphadigs_10NN_xdna_int16.npy", 10)
+    process_matrix_for_npu("ML_Graph", "mnist_test_norm_10NN") 
+    print_npu_matrix("npu_data/mnist_test_norm_10NN/mnist_test_norm_10NN_xdna_int16.npy", 10)
     #print_npu_matrix("npu_data/can_24/can_24_xdna_int16.npy", 9)
     # 定番の Williams/pdb1HYS なども試せます
     # process_matrix_for_npu("Williams", "pdb1HYS")
