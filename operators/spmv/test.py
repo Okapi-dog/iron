@@ -17,7 +17,8 @@ from operators.common.test_utils import run_test
 
 def generate_test_params(extensive=False):
     params = [
-        (24,24,9,1,1),
+        #(24,24,9,1,1), # can_24 matrix
+        (1404, 1404,31,1,1), # Binaryalphadigs_10NN matrix
     ]
     names = [
         f"matrix_vector_mul_{M}x{K}_{ell_width}ell_{tile_size}_{num_aie_columns}col"
@@ -126,7 +127,7 @@ def test_spmv(M, K, ell_width, num_aie_columns, tile_size, aie_context):
     )
 
     golden_ref = generate_golden_reference(M=M, K=K)
-    npu_data = np.load("npu_data/can_24/can_24_xdna_int16.npy")
+    npu_data = np.load("npu_data/Binaryalphadigs_10NN/Binaryalphadigs_10NN_xdna_int16.npy")
     #ellデータの形状を確認(ell_widthが合っているか)
     print(f"NPU Data Shape: {npu_data.shape}")
     print(f"ell_width: {ell_width}")
@@ -145,17 +146,4 @@ def test_spmv(M, K, ell_width, num_aie_columns, tile_size, aie_context):
     print(f"Throughput: {gflops:.6e} GFLOP/s")
     print(f"Effective Bandwidth: {bandwidth_gbps:.6e} GB/s\n")
 
-    """
-    golden_ref = generate_golden_reference(M=M, K=K,seed=100)
-    input_buffers = {"matrix": golden_ref["A"].flatten(), "vector": golden_ref["B"]}
-    output_buffers = {"output": golden_ref["C"]}
-    errors, latency_us, bandwidth_gbps = run_test(
-        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-3, warmup_iters=0
-    )
-    save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col_2nd")
-    print(f"\nLatency: {latency_us:.1f} us")
-    gflops = (2.0 * M * K) / (latency_us * 1e-6) / 1e9
-    print(f"Throughput: {gflops:.6e} GFLOP/s")
-    print(f"Effective Bandwidth: {bandwidth_gbps:.6e} GB/s\n")
-    """
     assert not errors, f"Test failed with errors: {errors}"

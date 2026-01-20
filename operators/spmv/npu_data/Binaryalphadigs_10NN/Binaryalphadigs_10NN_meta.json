@@ -1,0 +1,9 @@
+{
+    "name": "Binaryalphadigs_10NN",
+    "rows": 1404,
+    "cols": 1404,
+    "ell_width": 31,
+    "buffer_size(bytes)": 174096,
+    "buffer_size(bytes in bf16 dense matrix)": 3942432,
+    "dtype": "int16 (indices and bf16 values interleaved)"
+}

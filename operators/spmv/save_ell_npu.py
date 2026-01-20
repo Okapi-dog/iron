@@ -159,7 +159,9 @@ def print_npu_matrix(matrix_npy_path,cols):
 
 if __name__ == "__main__":
     # 例: HB/can_24
-    process_matrix_for_npu("HB", "can_24")
-    print_npu_matrix("npu_data/can_24/can_24_xdna_int16.npy", 9)
+    #process_matrix_for_npu("HB", "can_24")
+    process_matrix_for_npu("ML_Graph", "Binaryalphadigs_10NN") 
+    print_npu_matrix("npu_data/Binaryalphadigs_10NN/Binaryalphadigs_10NN_xdna_int16.npy", 10)
+    #print_npu_matrix("npu_data/can_24/can_24_xdna_int16.npy", 9)
     # 定番の Williams/pdb1HYS なども試せます
     # process_matrix_for_npu("Williams", "pdb1HYS")

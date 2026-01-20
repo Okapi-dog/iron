@@ -17,6 +17,114 @@ extern "C" void event1();
 
 #include <aie_api/aie.hpp>
 
+using data_t = bfloat16;
+
+void sparse_matvec_scalar(uint32_t m, 
+                          uint32_t k, 
+                          uint32_t ell_width, 
+                          uint32_t row_offset, 
+                          const bfloat16 *__restrict a, 
+                          const bfloat16 *__restrict b, 
+                          bfloat16 *__restrict c)
+{
+    event0();
+    // 出力ポインタ移動
+    c += row_offset * m;
+
+    // 行ごとのストライド（要素数換算）: index領域 + value領域
+    const uint32_t row_stride = 2 * ell_width;
+
+    // 現在の行の先頭ポインタを初期化
+    // Aは [idx...][val...], [idx...][val...] と並んでいる
+    const bfloat16 *ptr_base = a;
+
+    for (uint32_t row = 0; row < m; row++) {
+        // インデックス部と値部のポインタセット
+        const int16_t *ptr_idx = reinterpret_cast<const int16_t*>(ptr_base);
+        const bfloat16 *ptr_val = ptr_base + ell_width;
+
+        // アキュムレータを複数用意して依存関係を断ち切る (ILP向上)
+        float acc0 = 0.0f;
+        float acc1 = 0.0f;
+        float acc2 = 0.0f;
+        float acc3 = 0.0f;
+
+        uint32_t j = 0;
+
+        // --- メインループ: 4要素ずつ処理 (Unrolling) ---
+        // これにより、b[idx] のロード待ちの間に次の計算準備ができる
+        for (; j + 3 < ell_width; j += 4) {
+            // 値のロード (ポインタインクリメントはコンパイラが最適化しやすい)
+            bfloat16 v0 = *ptr_val++;
+            bfloat16 v1 = *ptr_val++;
+            bfloat16 v2 = *ptr_val++;
+            bfloat16 v3 = *ptr_val++;
+
+            // インデックスのロード
+            int16_t i0 = *ptr_idx++;
+            int16_t i1 = *ptr_idx++;
+            int16_t i2 = *ptr_idx++;
+            int16_t i3 = *ptr_idx++;
+
+            // 積和演算 (アキュムレータを分散)
+            acc0 += (float)v0 * (float)b[i0];
+            acc1 += (float)v1 * (float)b[i1];
+            acc2 += (float)v2 * (float)b[i2];
+            acc3 += (float)v3 * (float)b[i3];
+        }
+
+        // --- 残余ループ: 余った要素を処理 ---
+        for (; j < ell_width; j++) {
+            acc0 += (float)(*ptr_val++) * (float)b[*ptr_idx++];
+        }
+
+        // 行の処理完了、結果を格納
+        c[row] = static_cast<bfloat16>(acc0 + acc1 + acc2 + acc3);
+
+        // 次の行へベースポインタを進める
+        ptr_base += row_stride;
+    }
+    event1();
+}
+
+void sparse_matvec_scalar_easy(uint32_t m, 
+                          uint32_t k, 
+                          uint32_t ell_width, 
+                          uint32_t row_offset, 
+                          const bfloat16 *__restrict a, 
+                          const bfloat16 *__restrict b, 
+                          bfloat16 *__restrict c)
+{
+    event0();
+    // 出力ポインタ移動
+    c += row_offset * m;
+
+    // 行ごとのストライド（要素数換算）: index領域 + value領域
+    const uint32_t row_stride = 2 * ell_width;
+
+    // 現在の行の先頭ポインタを初期化
+    // Aは [idx...][val...], [idx...][val...] と並んでいる
+    const bfloat16 *ptr_base = a;
+
+    for (uint32_t row = 0; row < m; row++) {
+        // インデックス部と値部のポインタセット
+        const int16_t *ptr_idx = reinterpret_cast<const int16_t*>(ptr_base);
+        const bfloat16 *ptr_val = ptr_base + ell_width;
+
+        float acc = 0.0f;
+        AIE_LOOP_MIN_ITERATION_COUNT(4)
+        for (uint32_t j = 0; j < ell_width; j++) {
+            acc += (float)(*ptr_val++) * (float)b[*ptr_idx++];
+        }
+        // 行の処理完了、結果を格納
+        c[row] = static_cast<bfloat16>(acc);
+        // 次の行へベースポインタを進める
+        ptr_base += row_stride;
+    }
+    event1();
+}
+
+
 void matvec_scalar(uint32_t m, uint32_t k, uint32_t row_offset, 
                    const bfloat16 *__restrict a, 
                    const bfloat16 *__restrict b, 
@@ -112,6 +220,18 @@ void matvec_vectorized_bf16_bf16(uint32_t m,
                                  bfloat16 *c_out)
 {
     matvec_vectorized<64>(m, k, row_offset, a_in, b_in, c_out);
+}
+
+void sparse_matvec_scalar_bf16_bf16(uint32_t m, 
+                                     uint32_t k, 
+                                     uint32_t ell_width, 
+                                     uint32_t row_offset, 
+                                     const bfloat16 *a_in, 
+                                     const bfloat16 *b_in, 
+                                     bfloat16 *c_out)
+{
+    sparse_matvec_scalar(m, k, ell_width, row_offset, a_in, b_in, c_out);
+
 }
 
 } // extern "C"

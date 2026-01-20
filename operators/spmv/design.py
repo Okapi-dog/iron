@@ -49,9 +49,9 @@ def my_matvec(dev, num_cores, M, K, ell_width, m, trace_ddr_id=None, trace_size=
     func_type = "vectorized" if vectorized else "scalar"
     print(f"using {func_type} matvec kernel")
     matvec = Kernel(
-        f"matvec_{func_type}_{dtype_in_str}_{dtype_out_str}",
+        f"sparse_matvec_{func_type}_{dtype_in_str}_{dtype_out_str}",
         "mv.o",
-        [np.int32, np.int32, np.int32, L1_A_ty, L1_B_ty, L1_C_ty],
+        [np.int32, np.int32, np.int32, np.int32, L1_A_ty, L1_B_ty, L1_C_ty],
     )
 
     A_L3L1_fifos = [ObjectFifo(L1_A_ty, name=f"A_L3L1_{i}", depth=2) for i in range(num_cores)]
@@ -63,15 +63,13 @@ def my_matvec(dev, num_cores, M, K, ell_width, m, trace_ddr_id=None, trace_size=
     ]
 
     def core_body(A_L3L1_fifo,  B_L3L1_fifo, C_L1L3_fifo, matvec):
-        one_idx = index.constant(1)
-        m_idx = index.constant(m)
         for _ in range_(0xFFFFFFFF):
             b = B_L3L1_fifo.acquire(1)
             c = C_L1L3_fifo.acquire(1)
             for i_idx in range_(M // m // num_cores):
                 a = A_L3L1_fifo.acquire(1)
-                i_i32 = index.casts(T.i32(), i_idx)
-                #matvec(m, K, i_i32, a, b, c)
+                i_i32 = index.casts(T.i32(), i_idx) #row_offset
+                matvec(m, K, ell_width, i_i32,  a, b, c)
                 A_L3L1_fifo.release(1)
             C_L1L3_fifo.release(1)
             B_L3L1_fifo.release(1)

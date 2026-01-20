@@ -16,16 +16,15 @@ core tile memory trace
 Input Buffer: sparse_matrix, Size (bytes): 174096
 Input Buffer: vector, Size (bytes): 2808
 Output Buffer: output, Size (bytes): 2808
-Sparse matrix treated as dense for bandwidth calculation: 9.04 GB/s
 [AIESPMV] Trace saved to trace_spmv_1404_1404_1_1col_1st.txt
 [AIESPMV] Trace contains 32768 non-empty lines.
 [AIESPMV] Using MLIR file: build/spmv_1c_1404x1404_31ell_1t_traceddr3.mlir
 [AIESPMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_spmv_1404_1404_1_1col_1st.txt --mlir build/spmv_1c_1404x1404_31ell_1t_traceddr3.mlir --output trace_spmv_1404_1404_1_1col_1st.json
 [AIESPMV] Trace parsed successfully. Output: trace_spmv_1404_1404_1_1col_1st.json
 
-Latency: 436.7 us
-Throughput: 9.028403e+00 GFLOP/s
-Effective Bandwidth: 4.115511e-01 GB/s
+Latency: 463.1 us
+Throughput: 8.513700e+00 GFLOP/s
+Effective Bandwidth: 3.880889e-01 GB/s
 
 PASSED
 test.py::test_spmv[matrix_vector_mul_1404x1404_31ell_1_1col1] NPU Data Shape: (87048,)
@@ -34,17 +33,16 @@ Matrix Rows(cal by npu data and ell_width): 1404
 Input Buffer: sparse_matrix, Size (bytes): 174096
 Input Buffer: vector, Size (bytes): 2808
 Output Buffer: output, Size (bytes): 2808
-Sparse matrix treated as dense for bandwidth calculation: 9.06 GB/s
 [AIESPMV] Trace saved to trace_spmv_1404_1404_1_1col_1st.txt
 [AIESPMV] Trace contains 32768 non-empty lines.
 [AIESPMV] Using MLIR file: build/spmv_1c_1404x1404_31ell_1t_traceddr3.mlir
 [AIESPMV] Parsing trace command: python3 ../../applications/llama_3.2_1b/parse_trace.py --input trace_spmv_1404_1404_1_1col_1st.txt --mlir build/spmv_1c_1404x1404_31ell_1t_traceddr3.mlir --output trace_spmv_1404_1404_1_1col_1st.json
 [AIESPMV] Trace parsed successfully. Output: trace_spmv_1404_1404_1_1col_1st.json
 
-Latency: 435.9 us
-Throughput: 9.043728e+00 GFLOP/s
-Effective Bandwidth: 4.122497e-01 GB/s
+Latency: 465.8 us
+Throughput: 8.464535e+00 GFLOP/s
+Effective Bandwidth: 3.858477e-01 GB/s
 
 PASSED
 
-============================== 2 passed in 8.50s ===============================
+============================== 2 passed in 8.96s ===============================
