@@ -4,6 +4,7 @@ import numpy as np
 import scipy.io
 import torch
 from pathlib import Path
+import time
 
 def load_and_truncate_mtx(mtx_path):
     """
@@ -76,8 +77,11 @@ def generate_reference_from_mtx(npy_path, seed=42):
 
     # 3. 行列演算 A @ B -> C (全てFloat32で計算)
     # PyTorch CPUは Float32 の Sparse CSR matmul をサポートしています。
+    start_time = time.perf_counter()
     C = torch.matmul(A, B)
-
+    end_time = time.perf_counter()
+    elapsed_us = (end_time - start_time) * 1e6
+    print(f"[Reference] SpMV computation time: {elapsed_us:.2f} us")
     return {
         "A": A,
         "B": B, # run_test内でNPUに送られるベクトル

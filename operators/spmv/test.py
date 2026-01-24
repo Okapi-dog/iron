@@ -24,9 +24,13 @@ from operators.common.test_utils import run_test
 
 REGULAR_TEST_CONFIGS = [
     ("mnist_test_norm_10NN", 1, 1),
+    ("mnist_test_norm_10NN", 4, 1),
+    ("mnist_test_norm_10NN", 100, 1),
     ("mnist_test_norm_10NN", 1, 2),
     ("mnist_test_norm_10NN", 1, 4),
+    ("mnist_test_norm_10NN", 2, 4),
     ("mnist_test_norm_10NN", 1, 8),
+    ("mnist_test_norm_10NN", 10, 8),
     # ("can_24", 1, 1), # 必要であればコメントアウトを外す
 ]
 
@@ -63,8 +67,8 @@ def load_matrix_metadata(matrix_dir: Path):
     # 行列名を取得 (JSONにない場合はフォルダ名)
     matrix_name = meta_data.get("name", matrix_dir.name)
     
-    # int16 npyファイルのパスを確認
-    npy_path = matrix_dir / f"{matrix_name}_xdna_int16.npy"
+    # uint16 npyファイルのパスを確認
+    npy_path = matrix_dir / f"{matrix_name}_xdna_uint16.npy"
     if not npy_path.exists():
         print(f"[WARNING] NPY file not found for {matrix_name}: {npy_path}")
         return None
@@ -249,6 +253,9 @@ def test_spmv(npy_path, M, K, ell_width, num_aie_columns, tile_size, aie_context
     print(f"Matrix Rows(cal by npu data and ell_width): {npu_data.shape[0] // (ell_width*2)}")
     if npu_data.shape[0]/(ell_width*2) != M:
         raise AssertionError("NPU data shape does not match expected matrix dimensions.")
+    #row数がcore*tile_sizeの倍数であるか？
+    if M % (num_aie_columns * tile_size) != 0:
+        raise AssertionError("Matrix row count M is not a multiple of num_aie_columns * tile_size.")
 
     input_buffers = {"sparse_matrix": npu_data, "vector": golden_ref["B"].to(torch.bfloat16)}
     output_buffers = {"output": golden_ref["C"]}

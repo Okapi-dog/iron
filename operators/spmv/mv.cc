@@ -86,6 +86,289 @@ void sparse_matvec_scalar(uint32_t m,
     }
     event1();
 }
+void sparse_matvec_scalar_restrict(uint32_t m, 
+                          uint32_t k, 
+                          uint32_t ell_width, 
+                          uint32_t row_offset, 
+                          const bfloat16 *__restrict a, 
+                          const bfloat16 *__restrict b, 
+                          bfloat16 *__restrict c)
+{
+    event0();
+    // 出力ポインタ移動
+    c += row_offset * m;
+
+    // 行ごとのストライド（要素数換算）: index領域 + value領域
+    const uint32_t row_stride = 2 * ell_width;
+
+    // 現在の行の先頭ポインタを初期化
+    // Aは [idx...][val...], [idx...][val...] と並んでいる
+    const bfloat16 *ptr_base = a;
+
+    for (uint32_t row = 0; row < m; row++) {
+        // インデックス部と値部のポインタセット
+        const int16_t *__restrict ptr_idx = reinterpret_cast<const int16_t*>(ptr_base);
+        const bfloat16 *__restrict ptr_val = ptr_base + ell_width;
+
+        // アキュムレータを複数用意して依存関係を断ち切る (ILP向上)
+        float acc0 = 0.0f;
+        float acc1 = 0.0f;
+        float acc2 = 0.0f;
+        float acc3 = 0.0f;
+
+        uint32_t j = 0;
+
+        // --- メインループ: 4要素ずつ処理 (Unrolling) ---
+        // これにより、b[idx] のロード待ちの間に次の計算準備ができる
+        for (; j + 3 < ell_width; j += 4) {
+            // 値のロード (ポインタインクリメントはコンパイラが最適化しやすい)
+            bfloat16 v0 = *ptr_val++;
+            bfloat16 v1 = *ptr_val++;
+            bfloat16 v2 = *ptr_val++;
+            bfloat16 v3 = *ptr_val++;
+
+            // インデックスのロード
+            int16_t i0 = *ptr_idx++;
+            int16_t i1 = *ptr_idx++;
+            int16_t i2 = *ptr_idx++;
+            int16_t i3 = *ptr_idx++;
+
+            // 積和演算 (アキュムレータを分散)
+            acc0 += (float)v0 * (float)b[i0];
+            acc1 += (float)v1 * (float)b[i1];
+            acc2 += (float)v2 * (float)b[i2];
+            acc3 += (float)v3 * (float)b[i3];
+        }
+
+        // --- 残余ループ: 余った要素を処理 ---
+        for (; j < ell_width; j++) {
+            acc0 += (float)(*ptr_val++) * (float)b[*ptr_idx++];
+        }
+
+        // 行の処理完了、結果を格納
+        c[row] = static_cast<bfloat16>(acc0 + acc1 + acc2 + acc3);
+
+        // 次の行へベースポインタを進める
+        ptr_base += row_stride;
+    }
+    event1();
+}
+
+void sparse_matvec_scalar_bf16acc(uint32_t m, 
+                          uint32_t k, 
+                          uint32_t ell_width, 
+                          uint32_t row_offset, 
+                          const bfloat16 *__restrict a, 
+                          const bfloat16 *__restrict b, 
+                          bfloat16 *__restrict c)
+{
+    event0();
+    // 出力ポインタ移動
+    c += row_offset * m;
+
+    // 行ごとのストライド（要素数換算）: index領域 + value領域
+    const uint32_t row_stride = 2 * ell_width;
+
+    // 現在の行の先頭ポインタを初期化
+    // Aは [idx...][val...], [idx...][val...] と並んでいる
+    const bfloat16 *ptr_base = a;
+
+    for (uint32_t row = 0; row < m; row++) {
+        // インデックス部と値部のポインタセット
+        const int16_t *ptr_idx = reinterpret_cast<const int16_t*>(ptr_base);
+        const bfloat16 *ptr_val = ptr_base + ell_width;
+
+        // アキュムレータを複数用意して依存関係を断ち切る (ILP向上)
+        bfloat16 acc0 = 0.0f;
+        bfloat16 acc1 = 0.0f;
+        bfloat16 acc2 = 0.0f;
+        bfloat16 acc3 = 0.0f;
+
+        uint32_t j = 0;
+
+        // --- メインループ: 4要素ずつ処理 (Unrolling) ---
+        // これにより、b[idx] のロード待ちの間に次の計算準備ができる
+        for (; j + 3 < ell_width; j += 4) {
+            // 値のロード (ポインタインクリメントはコンパイラが最適化しやすい)
+            bfloat16 v0 = *ptr_val++;
+            bfloat16 v1 = *ptr_val++;
+            bfloat16 v2 = *ptr_val++;
+            bfloat16 v3 = *ptr_val++;
+
+            // インデックスのロード
+            int16_t i0 = *ptr_idx++;
+            int16_t i1 = *ptr_idx++;
+            int16_t i2 = *ptr_idx++;
+            int16_t i3 = *ptr_idx++;
+
+            // 積和演算 (アキュムレータを分散)
+            acc0 += v0 * b[i0];
+            acc1 += v1 * b[i1];
+            acc2 += v2 * b[i2];
+            acc3 += v3 * b[i3];
+        }
+
+        // --- 残余ループ: 余った要素を処理 ---
+        for (; j < ell_width; j++) {
+            acc0 += *ptr_val++ * b[*ptr_idx++];
+        }
+
+        // 行の処理完了、結果を格納
+        c[row] = acc0 + acc1 + acc2 + acc3;
+
+        // 次の行へベースポインタを進める
+        ptr_base += row_stride;
+    }
+    event1();
+}
+
+// パイプライン効率を上げるためのヒント
+// restrict: メモリ依存関係がないことを明示し、2つのロードユニット稼働を助ける
+template <uint32_t r> //floatは4/8/16/32, int16,bfloat16は8/16/32/64まで対応
+void sparse_matvec_vectorized(uint32_t m, 
+                                uint32_t k,
+                                uint32_t ell_width, 
+                                uint32_t row_offset, 
+                                const bfloat16 *__restrict a, 
+                                const bfloat16 *__restrict b, 
+                                bfloat16 *__restrict c)
+{
+    event0();
+    c += row_offset * m;
+    const uint32_t row_stride = 2 * ell_width;
+    const bfloat16 *ptr_base = a;
+
+    for (uint32_t row = 0; row < m; row++) {
+        const int16_t *__restrict ptr_idx = reinterpret_cast<const int16_t*>(ptr_base);
+        const bfloat16 *__restrict ptr_val = ptr_base + ell_width;
+
+        // 仕様書にある "fp32 accumulator" を使用
+        // これにより bfloat16 の積 -> float32 で加算 がハードウェアで行われる
+        aie::accum<accfloat, r> acc = aie::zeros<accfloat, r>();
+
+        // コンパイラにパイプライン処理を強力に促す
+        // (AIEコンパイラは通常これを自動で行いますが、明示も有効)
+        uint32_t j = 0;
+        
+        // --- Vector Loop (r elems) ---
+        // AIE-ML v2の "16-bit x r lanes" に対応
+        for (; j + r <= ell_width; j += r) {
+            // [Load Unit 1 & 2 Opportunity]
+            // idx と val は連続領域なのでベクトルロード
+            // ptr_idx と ptr_val のバンクが異なれば同時ロード可能
+            aie::vector<int16_t, r> idx_vec = aie::load_unaligned_v<r>(ptr_idx);
+            ptr_idx += r;
+            
+            aie::vector<bfloat16, r> val_vec = aie::load_unaligned_v<r>(ptr_val);
+            ptr_val += r;
+
+            // [Bottleneck: Software Gather]
+            // ここが一番時間がかかる。
+            // インデックスを使って b から値を拾う。
+            // 仕様書の「スカラーからベクトル」機能をr回使うことになる。
+            aie::vector<bfloat16, r> b_vec;
+            
+            
+            // コンパイラによるLoop Unrolling + Pipeliningを期待
+            #pragma unroll
+            AIE_LOOP_MIN_ITERATION_COUNT(r)
+            for (unsigned k = 0; k < r; ++k) {
+                b_vec[k] = b[idx_vec[k]];
+            }
+
+            // [Vector Unit]
+            // 仕様書の "Accumulate Unit" を使用
+            // acc(FP32) += val(BF16) * b(BF16)
+            acc = aie::mac(acc, val_vec, b_vec);
+        }
+
+        // --- Reduction ---
+        // ベクトル(r個の部分和)を1つのスカラ値に畳み込む
+        float total = aie::reduce_add(acc.template to_vector<float>());
+
+        // --- Cleanup Loop (Scalar) ---
+        #pragma unroll
+        for (; j < ell_width; j++) {
+            // ここも float で計算して精度維持
+            total += (float)(*ptr_val++) * (float)b[*ptr_idx++];
+        }
+
+        // Store
+        c[row] = static_cast<bfloat16>(total);
+        ptr_base += row_stride;
+    }
+    event1();
+}
+
+
+template <uint32_t r> //floatは4/8/16/32, int16,bfloat16は8/16/32/64まで対応
+void sparse_matvec_vectorized_aligned(uint32_t m, 
+                                uint32_t k,
+                                uint32_t ell_width, 
+                                uint32_t row_offset, 
+                                const bfloat16 *__restrict a, 
+                                const bfloat16 *__restrict b, 
+                                bfloat16 *__restrict c)
+{
+    event0();
+    c += row_offset * m;
+    const uint32_t row_stride = 2 * ell_width;
+    const bfloat16 *ptr_base = a;
+    for (uint32_t row = 0; row < m; row++) {
+        const int16_t *__restrict ptr_idx = reinterpret_cast<const int16_t*>(ptr_base);
+        const bfloat16 *__restrict ptr_val = ptr_base + ell_width;
+
+        // 仕様書にある "fp32 accumulator" を使用
+        // これにより bfloat16 の積 -> float32 で加算 がハードウェアで行われる
+        aie::accum<accfloat, r> acc = aie::zeros<accfloat, r>();
+
+        // コンパイラにパイプライン処理を強力に促す
+        // (AIEコンパイラは通常これを自動で行いますが、明示も有効)
+        uint32_t j = 0;
+        
+        // --- Vector Loop (r elems) ---
+        // AIE-ML v2の "16-bit x r lanes" に対応
+        for (; j + r <= ell_width; j += r) {
+            // [Load Unit 1 & 2 Opportunity]
+            // idx と val は連続領域なのでベクトルロード
+            // ptr_idx と ptr_val のバンクが異なれば同時ロード可能
+            aie::vector<int16_t, r> idx_vec = aie::load_v<r>(ptr_idx);
+            ptr_idx += r;
+            
+            aie::vector<bfloat16, r> val_vec = aie::load_v<r>(ptr_val);
+            ptr_val += r;
+
+            // [Bottleneck: Software Gather]
+            // ここが一番時間がかかる。
+            // インデックスを使って b から値を拾う。
+            // 仕様書の「スカラーからベクトル」機能をr回使うことになる。
+            aie::vector<bfloat16, r> b_vec;
+            
+            
+            // コンパイラによるLoop Unrolling + Pipeliningを期待
+            #pragma clang loop pipeline(disable)
+            #pragma unroll
+            AIE_LOOP_MIN_ITERATION_COUNT(r)
+            for (unsigned k = 0; k < r; ++k) {
+                b_vec[k] = b[idx_vec[k]];
+            }
+
+            // [Vector Unit]
+            // 仕様書の "Accumulate Unit" を使用
+            // acc(FP32) += val(BF16) * b(BF16)
+            acc = aie::mac(acc, val_vec, b_vec);
+        }
+
+        // --- Reduction ---
+        // ベクトル(r個の部分和)を1つのスカラ値に畳み込む
+        float total = aie::reduce_add(acc.template to_vector<float>());
+
+        // Store
+        c[row] = static_cast<bfloat16>(total);
+        ptr_base += row_stride;
+    }
+    event1();
+}
 
 void sparse_matvec_scalar_easy(uint32_t m, 
                           uint32_t k, 
@@ -230,8 +513,19 @@ void sparse_matvec_scalar_bf16_bf16(uint32_t m,
                                      const bfloat16 *b_in, 
                                      bfloat16 *c_out)
 {
-    sparse_matvec_scalar(m, k, ell_width, row_offset, a_in, b_in, c_out);
+    sparse_matvec_scalar_restrict(m, k, ell_width, row_offset, a_in, b_in, c_out);
 
 }
+
+void sparse_matvec_vectorized_bf16_bf16(uint32_t m, 
+                                        uint32_t k, 
+                                        uint32_t ell_width, 
+                                        uint32_t row_offset, 
+                                        const bfloat16 *a_in, 
+                                        const bfloat16 *b_in, 
+                                        bfloat16 *c_out)
+{
+    sparse_matvec_vectorized_aligned<32>(m, k, ell_width, row_offset, a_in, b_in, c_out);
+} 
 
 } // extern "C"

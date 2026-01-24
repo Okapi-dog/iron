@@ -23,7 +23,7 @@ from aie.utils.trace_events_enum import CoreEvent, MemEvent, ShimTileEvent, MemT
 
 
 def my_matvec(dev, num_cores, M, K, ell_width, m, trace_ddr_id=None, trace_size=65536):
-    vectorized = False # ベクトル演算しない。CSRをやるときのシミュレーション
+    vectorized = True # ベクトル演算しない。CSRをやるときのシミュレーション
     dtype_in = np.dtype[bfloat16]
     dtype_in_str = "bf16"
     dtype_out = np.dtype[bfloat16]
