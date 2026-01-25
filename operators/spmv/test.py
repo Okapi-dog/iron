@@ -32,6 +32,7 @@ REGULAR_TEST_CONFIGS = [
     ("mnist_test_norm_10NN", 2, 4),
     ("mnist_test_norm_10NN", 20, 4),
     ("mnist_test_norm_10NN", 20, 8),
+    ("mnist_test_norm_10NN", 80, 8),
     # ("can_24", 1, 1), # 必要であればコメントアウトを外す
 ]
 

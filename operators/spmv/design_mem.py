@@ -112,6 +112,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         of_A_cores = of_A_col.cons().split(
             A_split_offsets,
             obj_types=A_split_types,
+            placement=mem_tile,
             names=[f"A_core_{col_idx}_{r}" for r in range(cores_per_col)],
         )
 
@@ -126,6 +127,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         of_C_cores = of_C_col.prod().join(
             C_split_offsets,
             obj_types=C_split_types,
+            placement=mem_tile,
             names=[f"C_core_{col_idx}_{r}" for r in range(cores_per_col)]
         )
 
@@ -219,12 +221,24 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         ShimTileEvent.DMA_S2MM_0_FINISHED_BD,
         ShimTileEvent.DMA_S2MM_1_FINISHED_BD,
     ]
+    my_shim_events_mix = [
+        ShimTileEvent.DMA_S2MM_0_STREAM_STARVATION,
+        ShimTileEvent.DMA_S2MM_1_STREAM_STARVATION,
+        ShimTileEvent.DMA_S2MM_0_MEMORY_BACKPRESSURE,
+        ShimTileEvent.DMA_S2MM_1_MEMORY_BACKPRESSURE,
+
+        ShimTileEvent.DMA_MM2S_0_MEMORY_STARVATION,
+        ShimTileEvent.DMA_MM2S_1_MEMORY_STARVATION,
+        ShimTileEvent.DMA_MM2S_0_STREAM_BACKPRESSURE,
+        ShimTileEvent.DMA_MM2S_1_STREAM_BACKPRESSURE,
+
+    ]
     with rt.sequence(L3_A_ty, L3_B_ty, L3_C_ty) as (A, B, C):
         if trace_ddr_id is not None:
              rt.enable_trace(
                 trace_size=trace_size,
                 workers=[],
-                shimtile_events=my_shim_events_s2mm,
+                shimtile_events=my_shim_events_mix,
                 ddr_id=trace_ddr_id
             )
             
