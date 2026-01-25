@@ -23,14 +23,15 @@ from operators.common.test_utils import run_test
 # フォーマット: (matrix_name, tile_size, num_aie_columns)
 
 REGULAR_TEST_CONFIGS = [
-    ("mnist_test_norm_10NN", 1, 1),
+    ("mnist_test_norm_10NN", 2, 1),
     ("mnist_test_norm_10NN", 4, 1),
-    ("mnist_test_norm_10NN", 100, 1),
-    ("mnist_test_norm_10NN", 1, 2),
-    ("mnist_test_norm_10NN", 1, 4),
+    ("mnist_test_norm_10NN", 8, 1),
+    ("mnist_test_norm_10NN", 2, 2),
+    ("mnist_test_norm_10NN", 4, 2),
+    ("mnist_test_norm_10NN", 8, 2),
     ("mnist_test_norm_10NN", 2, 4),
-    ("mnist_test_norm_10NN", 1, 8),
-    ("mnist_test_norm_10NN", 10, 8),
+    ("mnist_test_norm_10NN", 20, 4),
+    ("mnist_test_norm_10NN", 20, 8),
     # ("can_24", 1, 1), # 必要であればコメントアウトを外す
 ]
 
@@ -262,7 +263,7 @@ def test_spmv(npy_path, M, K, ell_width, num_aie_columns, tile_size, aie_context
     errors, latency_us, bandwidth_gbps = run_test(
         operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-4, warmup_iters=2,verify=True
     )
-    save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col_1st")
+    save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col")
     print(f"\nLatency: {latency_us:.1f} us")
     gflops = (2.0 * M * K) / (latency_us * 1e-6) / 1e9
     print(f"Throughput: {gflops:.6e} GFLOP/s")

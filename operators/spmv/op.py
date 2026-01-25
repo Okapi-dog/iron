@@ -71,7 +71,7 @@ class AIESPMV(AIEOperatorBase):
 
         mlir_artifact = PythonGeneratedMLIRArtifact.new(
             f"{file_name_base}.mlir",
-            import_path=operator_dir / "design.py",
+            import_path=operator_dir / "design_mem.py",
             callback_fn="my_matvec",
             callback_args=[
                 self.context.device_manager.device_type,

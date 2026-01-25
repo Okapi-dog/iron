@@ -314,6 +314,8 @@ void sparse_matvec_vectorized_aligned(uint32_t m,
     c += row_offset * m;
     const uint32_t row_stride = 2 * ell_width;
     const bfloat16 *ptr_base = a;
+    #pragma unroll
+    AIE_LOOP_MIN_ITERATION_COUNT(2)
     for (uint32_t row = 0; row < m; row++) {
         const int16_t *__restrict ptr_idx = reinterpret_cast<const int16_t*>(ptr_base);
         const bfloat16 *__restrict ptr_val = ptr_base + ell_width;
@@ -344,9 +346,6 @@ void sparse_matvec_vectorized_aligned(uint32_t m,
             // 仕様書の「スカラーからベクトル」機能をr回使うことになる。
             aie::vector<bfloat16, r> b_vec;
             
-            
-            // コンパイラによるLoop Unrolling + Pipeliningを期待
-            #pragma clang loop pipeline(disable)
             #pragma unroll
             AIE_LOOP_MIN_ITERATION_COUNT(r)
             for (unsigned k = 0; k < r; ++k) {
@@ -364,6 +363,67 @@ void sparse_matvec_vectorized_aligned(uint32_t m,
         float total = aie::reduce_add(acc.template to_vector<float>());
 
         // Store
+        c[row] = static_cast<bfloat16>(total);
+        ptr_base += row_stride;
+    }
+    event1();
+}
+#define MAX_K 1000
+template <uint32_t r>
+void sparse_matvec_vectorized_aligned_notb(
+                                uint32_t m, 
+                                uint32_t k,          // ループ境界として使うので k は残す
+                                uint32_t ell_width, 
+                                uint32_t row_offset, 
+                                const bfloat16 *__restrict a, 
+                                bfloat16 *__restrict c)
+{
+    // ★修正: 内部バッファを最大サイズで確保
+    // staticをつけることでヒープ/スタックではなくデータメモリ領域に配置されます
+    alignas(32) static bfloat16 b_internal[MAX_K];
+
+    event0();
+
+    // Trace用: 初回だけ初期化するなどの処理を入れると良いですが、
+    // ランダムアクセス負荷の計測目的なら、未初期化(ゴミデータ)でもアクセス挙動は同じです。
+    // 必要ならここで初期化してください。
+    // if (row_offset == 0) { ... } 
+
+    c += row_offset * m;
+    const uint32_t row_stride = 2 * ell_width;
+    const bfloat16 *ptr_base = a;
+    
+    #pragma unroll
+    AIE_LOOP_MIN_ITERATION_COUNT(2)
+    for (uint32_t row = 0; row < m; row++) {
+        const int16_t *__restrict ptr_idx = reinterpret_cast<const int16_t*>(ptr_base);
+        const bfloat16 *__restrict ptr_val = ptr_base + ell_width;
+
+        aie::accum<accfloat, r> acc = aie::zeros<accfloat, r>();
+        uint32_t j = 0;
+        
+        for (; j + r <= ell_width; j += r) {
+            aie::vector<int16_t, r> idx_vec = aie::load_v<r>(ptr_idx);
+            ptr_idx += r;
+            
+            aie::vector<bfloat16, r> val_vec = aie::load_v<r>(ptr_val);
+            ptr_val += r;
+
+            aie::vector<bfloat16, r> b_vec;
+            
+            #pragma unroll
+            AIE_LOOP_MIN_ITERATION_COUNT(r)
+            for (unsigned k_idx = 0; k_idx < r; ++k_idx) {
+                // ★修正: 引数 b の代わりに 内部バッファ b_internal を使用
+                // ランダムアクセス(Gather)の負荷はこれで再現されます
+                int idx = idx_vec[k_idx] % MAX_K;
+                b_vec[k_idx] = b_internal[idx];
+            }
+
+            acc = aie::mac(acc, val_vec, b_vec);
+        }
+
+        float total = aie::reduce_add(acc.template to_vector<float>());
         c[row] = static_cast<bfloat16>(total);
         ptr_base += row_stride;
     }
@@ -526,6 +586,7 @@ void sparse_matvec_vectorized_bf16_bf16(uint32_t m,
                                         bfloat16 *c_out)
 {
     sparse_matvec_vectorized_aligned<32>(m, k, ell_width, row_offset, a_in, b_in, c_out);
+    //sparse_matvec_vectorized_aligned_notb<32>(m, k, ell_width, row_offset, a_in, c_out);
 } 
 
 } // extern "C"

@@ -5,6 +5,7 @@ import scipy.io
 import torch
 from pathlib import Path
 import time
+import json
 
 def load_and_truncate_mtx(mtx_path):
     """
@@ -39,20 +40,40 @@ def generate_reference_from_mtx(npy_path, seed=42):
     """
     npy_path_obj = Path(npy_path)
     matrix_dir = npy_path_obj.parent
-    matrix_name = npy_path_obj.stem.replace('_xdna_int16', '') 
+    matrix_name = npy_path_obj.stem.replace('_xdna_uint16', '') 
     
     # .mtx ファイルを探す
-    mtx_files = list(matrix_dir.glob("*.mtx"))
+    
+    mtx_files = list(matrix_dir.glob(f"{matrix_name}.mtx"))
     if not mtx_files:
-        mtx_files = list(matrix_dir.glob(f"{matrix_name}.mtx"))
-    if not mtx_files:
-        raise FileNotFoundError(f"No .mtx file found in {matrix_dir}")
+        raise FileNotFoundError(f"No {matrix_name}.mtx file found in {matrix_dir}")
     
     mtx_path = mtx_files[0]
     print(f"[Reference] Loading matrix from: {mtx_path}")
 
+    #jsonからメタデータを読んで、padding後のサイズを取得
+    meta_json_file = list(matrix_dir.glob(f"{matrix_name}_meta.json"))[0]
+    with open(meta_json_file, 'r') as f:
+        meta_data = json.load(f)
+        row_after_padding=meta_data['rows']#padding後の行数
+    
+
     # 1. 行列 A の構築 (Float32, 値はBF16相当)
     values, crow_indices, col_indices, shape = load_and_truncate_mtx(mtx_path)
+
+    # Padding処理
+    M, K = shape
+    if row_after_padding > M:
+        # パディングが必要な行数を計算
+        diff = row_after_padding - M
+        
+        # crow_indices (indptr) の末尾を拡張する
+        # 追加される行はすべてゼロ要素なので、現在の総非ゼロ数(最後の値)を繰り返して追加します
+        last_nnz = crow_indices[-1]
+        padding = torch.full((diff,), last_nnz, dtype=crow_indices.dtype)
+        crow_indices = torch.cat((crow_indices, padding))
+        
+        shape = (row_after_padding, K)
     
     # PyTorchのSparse CSR Tensor (Float32)
     A = torch.sparse_csr_tensor(
