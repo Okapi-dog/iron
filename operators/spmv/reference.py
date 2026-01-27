@@ -40,7 +40,8 @@ def generate_reference_from_mtx(npy_path, seed=42):
     """
     npy_path_obj = Path(npy_path)
     matrix_dir = npy_path_obj.parent
-    matrix_name = npy_path_obj.stem.replace('_xdna_uint16', '') 
+    matrix_name = npy_path_obj.stem.replace('_xdna_ell', '').replace('_xdna_sell32', '') 
+    ell_format = 'sell32' if 'sell32' in npy_path_obj.stem else 'ell'
     
     # .mtx ファイルを探す
     
@@ -52,7 +53,7 @@ def generate_reference_from_mtx(npy_path, seed=42):
     print(f"[Reference] Loading matrix from: {mtx_path}")
 
     #jsonからメタデータを読んで、padding後のサイズを取得
-    meta_json_file = list(matrix_dir.glob(f"{matrix_name}_meta.json"))[0]
+    meta_json_file = list(matrix_dir.glob(f"{matrix_name}_{ell_format}_meta.json"))[0]
     with open(meta_json_file, 'r') as f:
         meta_data = json.load(f)
         row_after_padding=meta_data['rows']#padding後の行数

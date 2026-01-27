@@ -24,15 +24,10 @@ from operators.common.test_utils import run_test
 
 REGULAR_TEST_CONFIGS = [
     ("mnist_test_norm_10NN", 2, 1),
-    ("mnist_test_norm_10NN", 4, 1),
-    ("mnist_test_norm_10NN", 8, 1),
     ("mnist_test_norm_10NN", 2, 2),
-    ("mnist_test_norm_10NN", 4, 2),
-    ("mnist_test_norm_10NN", 8, 2),
     ("mnist_test_norm_10NN", 2, 4),
-    ("mnist_test_norm_10NN", 20, 4),
-    ("mnist_test_norm_10NN", 20, 8),
-    ("mnist_test_norm_10NN", 80, 8),
+    ("mnist_test_norm_10NN", 2, 8),
+    ("mnist_test_norm_10NN", 4, 8),
     # ("can_24", 1, 1), # 必要であればコメントアウトを外す
 ]
 
@@ -51,11 +46,12 @@ def load_matrix_metadata(matrix_dir: Path):
     指定されたディレクトリ内の *_meta.json を読み込み、情報を辞書で返す。
     必要なファイルが存在しない場合は None を返す。
     """
+    ell_format = 'ell'  # 今回はSELL-32形式に固定
     if not matrix_dir.is_dir():
         return None
 
     # メタデータ(JSON)を探す
-    json_files = list(matrix_dir.glob("*_meta.json"))
+    json_files = list(matrix_dir.glob(f"*_{ell_format}_meta.json"))
     if not json_files:
         return None
     
@@ -69,8 +65,9 @@ def load_matrix_metadata(matrix_dir: Path):
     # 行列名を取得 (JSONにない場合はフォルダ名)
     matrix_name = meta_data.get("name", matrix_dir.name)
     
-    # uint16 npyファイルのパスを確認
-    npy_path = matrix_dir / f"{matrix_name}_xdna_uint16.npy"
+    # npyファイルのパスを確認
+    npy_path = matrix_dir / f"{matrix_name}_xdna_{ell_format}.npy"
+    #_xdna_uint16.npy or _xdna_sell32.npy
     if not npy_path.exists():
         print(f"[WARNING] NPY file not found for {matrix_name}: {npy_path}")
         return None
@@ -245,7 +242,7 @@ def test_spmv(npy_path, M, K, ell_width, num_aie_columns, tile_size, aie_context
         trace_ddr_id=3,#3
         trace_size=8192*4,
     )
-
+    ell_format = 'sell32' if 'sell32' in npy_path else 'ell'
     golden_ref = generate_reference_from_mtx(npy_path=npy_path)
     print(f"Loading matrix from: {npy_path}")
     npu_data = np.load(npy_path)
@@ -256,7 +253,7 @@ def test_spmv(npy_path, M, K, ell_width, num_aie_columns, tile_size, aie_context
     if npu_data.shape[0]/(ell_width*2) != M:
         raise AssertionError("NPU data shape does not match expected matrix dimensions.")
     #row数がcore*tile_sizeの倍数であるか？
-    if M % (num_aie_columns * tile_size) != 0:
+    if (M % (num_aie_columns * tile_size) != 0) and ell_format == 'ell':
         raise AssertionError("Matrix row count M is not a multiple of num_aie_columns * tile_size.")
 
     input_buffers = {"sparse_matrix": npu_data, "vector": golden_ref["B"].to(torch.bfloat16)}

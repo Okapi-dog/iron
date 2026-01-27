@@ -109,7 +109,7 @@ def process_matrix_for_npu(group, name, output_dir="npu_data", col_alignment=1, 
     npu_buffer = pack_for_xdna(ell_data, ell_indices)
     
     # 保存
-    save_path = os.path.join(save_dir, f"{name}_xdna_uint16.npy")
+    save_path = os.path.join(save_dir, f"{name}_xdna_ell.npy")
     np.save(save_path, npu_buffer)
 
     # メタデータ計算用
@@ -119,7 +119,7 @@ def process_matrix_for_npu(group, name, output_dir="npu_data", col_alignment=1, 
     total_csr_size = csr_values_size + csr_indices_size + csr_indptr_size
 
     # メタデータ保存
-    meta_path = os.path.join(save_dir, f"{name}_meta.json")
+    meta_path = os.path.join(save_dir, f"{name}_ell_meta.json")
     meta_info = {
         "name": name,
         "rows": int(n_rows_padded),           # ★更新後のデータ (パディング済み)
@@ -165,8 +165,8 @@ if __name__ == "__main__":
         "ML_Graph", 
         "mnist_test_norm_10NN", 
         col_alignment=32, 
-        row_alignment=640
+        row_alignment=2560
     ) 
     
     # 確認表示
-    print_npu_matrix("npu_data/mnist_test_norm_10NN/mnist_test_norm_10NN_xdna_uint16.npy", 10)
+    print_npu_matrix("npu_data/mnist_test_norm_10NN/mnist_test_norm_10NN_xdna_ell.npy", 10)
