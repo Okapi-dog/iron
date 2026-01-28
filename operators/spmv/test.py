@@ -23,18 +23,21 @@ from operators.common.test_utils import run_test
 # フォーマット: (matrix_name, tile_size, num_aie_columns)
 
 REGULAR_TEST_CONFIGS = [
-    ("mnist_test_norm_10NN", 2, 1),
-    ("mnist_test_norm_10NN", 2, 2),
-    ("mnist_test_norm_10NN", 2, 4),
-    ("mnist_test_norm_10NN", 2, 8),
+    ("random_M4096_K1024", 2, 1),
+    ("random_M12288_K10000", 2, 1),
+    ("random_M5120_K1024", 2, 1),
+    ("random_M5000_K1024", 2, 1),
+    ("random_M5000_K1000", 2, 1),
+    ("random_M5000_K10000", 2, 1),
+    ("random_M5120_K10000", 2, 1),
+    ("random_M12288_K10000", 2, 2),
+    ("random_M12288_K10000", 2, 4),
+    ("random_M12288_K10000", 2, 8),
     ("mnist_test_norm_10NN", 4, 8),
-    # ("can_24", 1, 1), # 必要であればコメントアウトを外す
 ]
 
 EXTENSIVE_TEST_CONFIGS = [
     # 長時間テストや詳細テスト用
-    # ("mnist_test_norm_10NN", 1, 2), 
-    # ("mnist_test_norm_10NN", 1, 4),
 ]
 
 # ==========================================
@@ -46,7 +49,7 @@ def load_matrix_metadata(matrix_dir: Path):
     指定されたディレクトリ内の *_meta.json を読み込み、情報を辞書で返す。
     必要なファイルが存在しない場合は None を返す。
     """
-    ell_format = 'ell'  # 今回はSELL-32形式に固定
+    ell_format = 'ell'  #ell or sell32
     if not matrix_dir.is_dir():
         return None
 
@@ -75,9 +78,9 @@ def load_matrix_metadata(matrix_dir: Path):
     # 必要な情報を辞書にまとめる
     return {
         "name": matrix_name,
-        "rows": meta_data["rows"],
-        "cols": meta_data["cols"],
-        "ell_width": meta_data["ell_width"],
+        "rows": meta_data["physical_layout"]["aligned_rows"],
+        "cols": meta_data["logical_shape"]["cols"],
+        "ell_width": meta_data["physical_layout"]["aligned_ell_width"],
         "npy_path": str(npy_path)
     }
 
@@ -239,7 +242,7 @@ def test_spmv(npy_path, M, K, ell_width, num_aie_columns, tile_size, aie_context
         num_aie_columns=num_aie_columns,
         tile_size=tile_size,
         context=aie_context,
-        trace_ddr_id=3,#3
+        trace_ddr_id=None,#3
         trace_size=8192*4,
     )
     ell_format = 'sell32' if 'sell32' in npy_path else 'ell'
@@ -259,7 +262,7 @@ def test_spmv(npy_path, M, K, ell_width, num_aie_columns, tile_size, aie_context
     input_buffers = {"sparse_matrix": npu_data, "vector": golden_ref["B"].to(torch.bfloat16)}
     output_buffers = {"output": golden_ref["C"]}
     errors, latency_us, bandwidth_gbps = run_test(
-        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-4, warmup_iters=2,verify=True
+        operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-4, warmup_iters=2, verify=True
     )
     save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col")
     print(f"\nLatency: {latency_us:.1f} us")

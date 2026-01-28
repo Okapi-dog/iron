@@ -56,7 +56,7 @@ def generate_reference_from_mtx(npy_path, seed=42):
     meta_json_file = list(matrix_dir.glob(f"{matrix_name}_{ell_format}_meta.json"))[0]
     with open(meta_json_file, 'r') as f:
         meta_data = json.load(f)
-        row_after_padding=meta_data['rows']#padding後の行数
+        row_after_padding=meta_data['physical_layout']['aligned_rows'] #padding後の行数
     
 
     # 1. 行列 A の構築 (Float32, 値はBF16相当)
