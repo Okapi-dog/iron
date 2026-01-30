@@ -4,6 +4,7 @@
 import torch
 import numpy as np
 from ml_dtypes import bfloat16
+import time
 
 
 def generate_golden_reference(M=42, K=42, seed=42):
@@ -26,7 +27,11 @@ def generate_golden_reference(M=42, K=42, seed=42):
     B = torch.rand(K, dtype=torch.bfloat16) * val_range
 
     # Generate golden outputs
+    start_time = time.perf_counter()
     C = A @ B
+    end_time = time.perf_counter()
+    elapsed_us = (end_time - start_time) * 1e6
+    #print(f"[Reference] GEMV computation time: {elapsed_us:.2f} us")
 
     return {
         "A": A,

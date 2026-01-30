@@ -32,14 +32,13 @@ void sparse_matvec_vectorized_aligned(uint32_t m,
     c += row_offset * m;
     const uint32_t row_stride = 2 * ell_width;
     const bfloat16 *ptr_base = a;
-    #pragma unroll
+    AIE_PREPARE_FOR_PIPELINING
     AIE_LOOP_MIN_ITERATION_COUNT(2)
+    const uint16_t *__restrict ptr_idx = reinterpret_cast<const uint16_t*>(ptr_base);
+    const bfloat16 *__restrict ptr_val = ptr_base + ell_width;
     for (uint32_t row = 0; row < m; row++) {
-        const int16_t *__restrict ptr_idx = reinterpret_cast<const int16_t*>(ptr_base);
-        const bfloat16 *__restrict ptr_val = ptr_base + ell_width;
 
         // 仕様書にある "fp32 accumulator" を使用
-        // これにより bfloat16 の積 -> float32 で加算 がハードウェアで行われる
         aie::accum<accfloat, r> acc = aie::zeros<accfloat, r>();
 
         // コンパイラにパイプライン処理を強力に促す
@@ -49,40 +48,28 @@ void sparse_matvec_vectorized_aligned(uint32_t m,
         // --- Vector Loop (r elems) ---
         // AIE-ML v2の "16-bit x r lanes" に対応
         for (; j + r <= ell_width; j += r) {
-            // [Load Unit 1 & 2 Opportunity]
-            // idx と val は連続領域なのでベクトルロード
-            // ptr_idx と ptr_val のバンクが異なれば同時ロード可能
-            aie::vector<int16_t, r> idx_vec = aie::load_v<r>(ptr_idx);
-            ptr_idx += r;
-            
+            aie::vector<uint16_t, r> idx_vec = aie::load_v<r>(ptr_idx);
             aie::vector<bfloat16, r> val_vec = aie::load_v<r>(ptr_val);
+            ptr_idx += r;
             ptr_val += r;
 
-            // [Bottleneck: Software Gather]
-            // ここが一番時間がかかる。
-            // インデックスを使って b から値を拾う。
-            // 仕様書の「スカラーからベクトル」機能をr回使うことになる。
             aie::vector<bfloat16, r> b_vec;
             
-            #pragma unroll
-            AIE_LOOP_MIN_ITERATION_COUNT(r)
+            AIE_LOOP_UNROLL_FULL
             for (unsigned k = 0; k < r; ++k) {
                 b_vec[k] = b[idx_vec[k]];
             }
 
-            // [Vector Unit]
-            // 仕様書の "Accumulate Unit" を使用
-            // acc(FP32) += val(BF16) * b(BF16)
             acc = aie::mac(acc, val_vec, b_vec);
         }
 
         // --- Reduction ---
-        // ベクトル(r個の部分和)を1つのスカラ値に畳み込む
         float total = aie::reduce_add(acc.template to_vector<float>());
 
         // Store
         c[row] = static_cast<bfloat16>(total);
-        ptr_base += row_stride;
+        ptr_idx += row_stride;
+        ptr_val += row_stride;
     }
     event1();
 }
@@ -111,26 +98,21 @@ void sell32_spmv_kernel(
         aie::accum<accfloat, 16> acc0 = aie::zeros<accfloat, 16>();
         aie::accum<accfloat, 16> acc1 = aie::zeros<accfloat, 16>();
 
-        const uint16_t *__restrict p_idx_curr = ptr_idx;
-        const bfloat16 *__restrict p_val_curr = ptr_val;
-        
         // 最低反復回数の保証（パイプライン充填のため）
         AIE_PREPARE_FOR_PIPELINING
-        AIE_LOOP_UNROLL(4)
         AIE_LOOP_MIN_ITERATION_COUNT(8)
         for (uint32_t k = 0; k < ell_width; k++) {
             
             // 1. ロード (Load Units)
             // 前半・後半を一気にロードします。
             // AIEは2つのロードユニットを持つため、並列ロードが期待できます。
-            aie::vector<uint16_t, 16> idx0 = aie::load_v<16>(p_idx_curr);
-            aie::vector<uint16_t, 16> idx1 = aie::load_v<16>(p_idx_curr + 16);
+            aie::vector<uint16_t, 16> idx0 = aie::load_v<16>(ptr_idx);
+            aie::vector<uint16_t, 16> idx1 = aie::load_v<16>(ptr_idx + 16);
             
-            aie::vector<bfloat16, 16> val0 = aie::load_v<16>(p_val_curr);
-            aie::vector<bfloat16, 16> val1 = aie::load_v<16>(p_val_curr + 16);
-
-            p_idx_curr += block_stride;
-            p_val_curr += block_stride;
+            aie::vector<bfloat16, 16> val0 = aie::load_v<16>(ptr_val);
+            aie::vector<bfloat16, 16> val1 = aie::load_v<16>(ptr_val + 16);
+            ptr_idx += block_stride;
+            ptr_val += block_stride;
 
             // 2. Gather
             
@@ -151,8 +133,60 @@ void sell32_spmv_kernel(
         aie::store_v(vec_y, acc0.template to_vector<bfloat16>());
         aie::store_v(vec_y + 16, acc1.template to_vector<bfloat16>());
         
-        ptr_idx = p_idx_curr;
-        ptr_val = p_val_curr;
+        vec_y += 32;
+    }
+    
+    event1();
+}
+
+template <uint32_t r = 32> 
+void sell32_spmv_kernel_32wide(
+    uint32_t num_blocks,
+    uint32_t ell_width,
+    const bfloat16 *__restrict data_ptr, 
+    const bfloat16 *__restrict vec_x,   
+    bfloat16 *__restrict vec_y          
+)
+{
+    // [重要] 丸めモードを設定（acc -> vector 変換時のエラー防止と精度確保）
+    // 参考コードにあるように、bf16への変換にはこれが必要です
+    ::aie::set_rounding(aie::rounding_mode::conv_even);
+
+    event0();
+
+    // ポインタのセットアップ
+    const uint16_t *__restrict ptr_idx = reinterpret_cast<const uint16_t*>(data_ptr);
+    const bfloat16 *__restrict ptr_val = data_ptr + 32; 
+
+    const int block_stride = 64; 
+
+    for (uint32_t b = 0; b < num_blocks; b++) {
+
+        aie::accum<accfloat, 32> acc = aie::zeros<accfloat, 32>();
+
+
+        // パイプライン化指示
+        AIE_PREPARE_FOR_PIPELINING
+        AIE_LOOP_MIN_ITERATION_COUNT(10)
+        for (uint32_t k = 0; k < ell_width; k++) {
+            
+            aie::vector<uint16_t, 32> idx = aie::load_v<32>(ptr_idx);
+            aie::vector<bfloat16, 32> val = aie::load_v<32>(ptr_val);
+
+            ptr_idx += block_stride;
+            ptr_val += block_stride;
+            aie::vector<bfloat16, 32> x_gathered;
+
+            AIE_LOOP_UNROLL_FULL
+            for (int i = 0; i < 32; i++) {
+                x_gathered[i] = vec_x[idx[i]];
+            }
+
+            acc = aie::mac(acc, val, x_gathered);
+        }
+
+        aie::vector<bfloat16, 32> res = acc.template to_vector<bfloat16>();
+        aie::store_v(vec_y, res);
         
         vec_y += 32;
     }
@@ -168,9 +202,9 @@ void sparse_matvec_vectorized_bf16_bf16(uint32_t m,
                                         uint32_t k, 
                                         uint32_t ell_width, 
                                         uint32_t row_offset, 
-                                        const bfloat16 *a_in, 
-                                        const bfloat16 *b_in,
-                                        bfloat16 *c_out
+                                        const bfloat16 *__restrict a_in, 
+                                        const bfloat16 *__restrict b_in,
+                                        bfloat16 *__restrict c_out
                                     )
 {
     sparse_matvec_vectorized_aligned<32>(m, k, ell_width, row_offset, a_in, b_in, c_out);
@@ -180,12 +214,12 @@ void sparse_matvec_vectorized_bf16_bf16(uint32_t m,
 void sell32_spmv_vectorized_bf16_bf16(
     uint32_t num_blocks,
     uint32_t ell_width,
-    const bfloat16 *data_ptr,
-    const bfloat16 *vec_x,
-    bfloat16 *vec_y
+    const bfloat16 *__restrict data_ptr,
+    const bfloat16 *__restrict vec_x,
+    bfloat16 *__restrict vec_y
 )
 {
-    sell32_spmv_kernel<32>(num_blocks, ell_width, data_ptr, vec_x, vec_y);
+    sell32_spmv_kernel_32wide<32>(num_blocks, ell_width, data_ptr, vec_x, vec_y);
 }
 
 } // extern "C"

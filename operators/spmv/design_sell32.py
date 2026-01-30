@@ -41,6 +41,9 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
     assert M % BLOCK_SIZE == 0, f"M must be a multiple of {BLOCK_SIZE}"
     assert total_blocks % (num_total_cores * m) == 0, "Total blocks must be divisible by (cores * m)"
 
+    #Kが32の倍数ないと、アライメントでエラーになる。原因は不明。
+    assert K % 32 == 0, "K must be a multiple of 32. if not, this causes output miscalculation. Cause of this problem is unknown."
+
     if dev == "npu" or isinstance(dev, NPU1):
         dev_ty = NPU1()
     elif dev == "npu2" or isinstance(dev, NPU2):
@@ -84,6 +87,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
     # 各コアが担当する反復回数
     # 反復回数 = 全ブロック / (全コア数 * 1回あたりのブロック数m)
     iter_count = total_blocks // (num_total_cores * m)
+    assert total_blocks % (num_total_cores * m) == 0, "Total blocks must be divisible by (total cores * m)"
 
     for col_idx in range(active_cols):
         shim_tile = Tile(col_idx, 0)
@@ -153,6 +157,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         # A: この列が担当するブロック分をスライス
         # Aは (M, ell_width*2) の要素を持つ
         blocks_per_col = total_blocks // active_cols
+        assert total_blocks % active_cols == 0, "Total blocks must be divisible by active columns"
         A_tap = TensorAccessPattern(
             (M, ell_width * 2),
             col_idx * blocks_per_col * BLOCK_SIZE * ell_width * 2,
@@ -264,6 +269,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
                 A,
                 all_A_taps[col_idx],
                 task_group=tg,
+                wait=True,
                 placement=shim_tile
             )
             
@@ -272,6 +278,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
                 col_B_fifos[col_idx].prod(),
                 B,
                 task_group=tg,
+                wait=True,
                 placement=shim_tile
             )
 

@@ -18,9 +18,9 @@ COL_ALIGNMENT = 32     # ELLの幅(width)をこの倍数に合わせる
 ROW_ALIGNMENT = 128   # 行数(rows)をこの倍数に合わせる
 
 # [Mode A] Random Settings
-RAND_M = 5000
-RAND_K = 10000
-RAND_ELL_WIDTH = 64
+RAND_M = 10240
+RAND_K = 256
+RAND_ELL_WIDTH = 128
 
 # [Mode B] Download Settings
 SS_GROUP = "ML_Graph"
@@ -111,20 +111,18 @@ def get_random_ell_matrix(output_root_dir):
     # ---------------------------------------------------------
     print(" -> Saving .mtx for Reference check...")
     
-    # ELLからCSR(coo経由)を作って保存する
-    # 有効なデータ部分だけを取り出す (パディング部分は無視)
-    valid_rows = RAND_M
-    valid_width = aligned_width
+    # ★修正: NPUデータと完全に一致させるため、パディング部分(Index=0, Value=0)も含めてMTXにする
+    # ELL形式では全行が aligned_width を持つため、構造がシンプルです
     
-    # 座標データの作成
-    row_indices_vec = np.repeat(np.arange(valid_rows), valid_width)
-    col_indices_vec = ell_indices[:valid_rows, :valid_width].flatten()
-    data_vec = ell_data[:valid_rows, :valid_width].flatten()
+    # 座標データの作成 (n_rows_padded を使用)
+    row_indices_vec = np.repeat(np.arange(n_rows_padded), aligned_width)
+    col_indices_vec = ell_indices.flatten() # スライスせず全データ
+    data_vec = ell_data.flatten()           # スライスせず全データ
     
-    # CSR行列作成
+    # CSR行列作成 (shapeもパディング後に合わせる)
     sparse_matrix = scipy.sparse.csr_matrix(
         (data_vec, (row_indices_vec, col_indices_vec)), 
-        shape=(valid_rows, RAND_K)
+        shape=(n_rows_padded, RAND_K)
     )
     
     # .mtx 保存

@@ -30,7 +30,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
 
     # 設定
     active_cols = num_cols 
-    cores_per_col = 4  # 1列あたりの並列コア数
+    cores_per_col = 1  # 1列あたりの並列コア数
     num_total_cores = active_cols * cores_per_col
     
     # 割り切れるかチェック

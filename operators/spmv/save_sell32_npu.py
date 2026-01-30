@@ -5,6 +5,7 @@ import json
 import os
 import glob
 import ssgetpy
+import time
 
 # ==========================================
 # 1. 設定エリア
@@ -12,18 +13,17 @@ import ssgetpy
 USE_RANDOM = True
 
 OUTPUT_DIR = "npu_data"
-BLOCK_ALIGNMENT = 128    # ブロック数のアライメント単位 (例: 128ブロック単位で切り上げ)
+BLOCK_ALIGNMENT = 32    # ブロック数のアライメント単位 (例: 128ブロック単位で切り上げ)
 ELL_WIDTH_ALIGNMENT = 1  # ELL幅のアライメント単位 (例: 1ならアライメントなし、4なら4の倍数)
 
 # [Mode A] Random
-RAND_M = 5000
-RAND_K = 10000
-RAND_ELL_WIDTH = 64
+RAND_M = 10240
+RAND_K = 512
+RAND_ELL_WIDTH = 128
 
 # [Mode B] Download
 SS_GROUP = "ML_Graph"
 SS_NAME  = "mnist_test_norm_10NN"
-np.random.seed(42)  # 再現性のためのシード設定
 
 # ==========================================
 # 2. コア変換ロジック
@@ -76,12 +76,13 @@ def get_random_ell_matrix(output_root_dir):
     print(f"--- [Random Mode] Generating {name_prefix}, ELL={RAND_ELL_WIDTH} ---")
     
     padded_rows, total_blocks = calc_padded_rows(RAND_M, BLOCK_ALIGNMENT)
-    
+    seed = int(time.time())
+    np.random.seed(seed)
     ell_data = np.random.rand(padded_rows, RAND_ELL_WIDTH).astype(np.float32)
     ell_indices = np.zeros((padded_rows, RAND_ELL_WIDTH), dtype=np.int32)
     
     for r in range(padded_rows):
-        cols = np.random.choice(RAND_K, RAND_ELL_WIDTH, replace=False)
+        cols = np.random.choice(np.arange(RAND_K), size=RAND_ELL_WIDTH, replace=False)
         cols.sort()
         ell_indices[r, :] = cols
 
@@ -157,6 +158,12 @@ def main():
         ell_data, ell_indices, orig_rows, orig_cols, actual_nnz, name_prefix = get_random_ell_matrix(OUTPUT_DIR)
     else:
         ell_data, ell_indices, orig_rows, orig_cols, actual_nnz, name_prefix = get_downloaded_ell_matrix(OUTPUT_DIR)
+    save_dir = os.path.join(OUTPUT_DIR, name_prefix) 
+    raw_data_path = os.path.join(save_dir, f"{name_prefix}_raw_ell_data.npy")
+    raw_indices_path = os.path.join(save_dir, f"{name_prefix}_raw_ell_indices.npy")
+    
+    np.save(raw_data_path, ell_data)       # shape: (rows, width), float32
+    np.save(raw_indices_path, ell_indices) # shape: (rows, width), int32
 
     # パッキング
     print("--- Packing data to XDNA SELL-32 format ---")
