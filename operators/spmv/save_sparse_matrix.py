@@ -11,14 +11,15 @@ import time
 # 1. 設定エリア
 # ==========================================
 USE_RANDOM = True
-
 OUTPUT_DIR = "npu_data"
+#SELL-32形式のアライメント設定
 BLOCK_ALIGNMENT = 32    # ブロック数のアライメント単位 (例: 128ブロック単位で切り上げ)
 ELL_WIDTH_ALIGNMENT = 1  # ELL幅のアライメント単位 (例: 1ならアライメントなし、4なら4の倍数)
 
+
 # [Mode A] Random
 RAND_M = 10240
-RAND_K = 28640
+RAND_K = 512
 RAND_ELL_WIDTH = 128
 
 # [Mode B] Download

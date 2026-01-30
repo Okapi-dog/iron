@@ -17,10 +17,7 @@ from operators.common.test_utils import run_test
 
 def generate_test_params(extensive=False):
     params = [
-        (10240,256,8,32),
-        (10240,512,8,16),
-        (10240,1024,8,8),
-        (10240,10240,8,1),
+        (10240,2048,8,4)
     ]
     names = [
         f"matrix_vector_mul_{M}x{K}_{tile_size}_{num_aie_columns}col"

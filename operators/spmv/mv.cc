@@ -32,10 +32,10 @@ void sparse_matvec_vectorized_aligned(uint32_t m,
     c += row_offset * m;
     const uint32_t row_stride = 2 * ell_width;
     const bfloat16 *ptr_base = a;
-    AIE_PREPARE_FOR_PIPELINING
-    AIE_LOOP_MIN_ITERATION_COUNT(2)
     const uint16_t *__restrict ptr_idx = reinterpret_cast<const uint16_t*>(ptr_base);
     const bfloat16 *__restrict ptr_val = ptr_base + ell_width;
+    //AIE_PREPARE_FOR_PIPELINING
+    //AIE_LOOP_MIN_ITERATION_COUNT(2)
     for (uint32_t row = 0; row < m; row++) {
 
         // 仕様書にある "fp32 accumulator" を使用
@@ -195,6 +195,62 @@ void sell32_spmv_kernel_32wide(
 }
 
 
+void sell32_spmv_kernel_32_block(
+    uint32_t ell_width,
+    uint32_t reset,
+    const bfloat16 *__restrict data_ptr, 
+    const bfloat16 *__restrict vec_x,   
+    bfloat16 *__restrict vec_y          
+)
+{
+    // [重要] 丸めモードを設定（acc -> vector 変換時のエラー防止と精度確保）
+    // 参考コードにあるように、bf16への変換にはこれが必要です
+    ::aie::set_rounding(aie::rounding_mode::conv_even);
+
+    event0();
+
+    // ポインタのセットアップ
+    const uint16_t *__restrict ptr_idx = reinterpret_cast<const uint16_t*>(data_ptr);
+    const bfloat16 *__restrict ptr_val = data_ptr + 32; 
+
+    const int block_stride = 64; 
+
+    aie::accum<accfloat, 32> acc;
+
+    // 初期化またはロード
+    if (reset == 0) {
+        acc = aie::zeros<accfloat, 32>();
+    } else {
+        acc = aie::load_v<32>(vec_y);
+    }
+    // パイプライン化指示
+    AIE_PREPARE_FOR_PIPELINING
+    AIE_LOOP_MIN_ITERATION_COUNT(10)
+    for (uint32_t k = 0; k < ell_width; k++) {
+        
+        aie::vector<uint16_t, 32> idx = aie::load_v<32>(ptr_idx);
+        aie::vector<bfloat16, 32> val = aie::load_v<32>(ptr_val);
+
+        ptr_idx += block_stride;
+        ptr_val += block_stride;
+        aie::vector<bfloat16, 32> x_gathered;
+
+        AIE_LOOP_UNROLL_FULL
+        for (int i = 0; i < 32; i++) {
+            x_gathered[i] = vec_x[idx[i]];
+        }
+
+        acc = aie::mac(acc, val, x_gathered);
+    }
+
+    aie::vector<bfloat16, 32> res = acc.template to_vector<bfloat16>();
+    aie::store_v(vec_y, res);
+    
+    
+    event1();
+}
+
+
 extern "C" { 
 
 
@@ -220,6 +276,16 @@ void sell32_spmv_vectorized_bf16_bf16(
 )
 {
     sell32_spmv_kernel_32wide<32>(num_blocks, ell_width, data_ptr, vec_x, vec_y);
+}
+void sell32_block_spmv_vectorized_bf16_bf16(
+    uint32_t ell_width,
+    uint32_t reset,
+    const bfloat16 *__restrict data_ptr,
+    const bfloat16 *__restrict vec_x,
+    bfloat16 *__restrict vec_y
+)
+{
+    sell32_spmv_kernel_32_block(ell_width, reset, data_ptr, vec_x, vec_y);
 }
 
 } // extern "C"

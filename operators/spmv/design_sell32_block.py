@@ -29,14 +29,23 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
     dtype_out_str = "bf16"
 
     # 設定
+    BLOCK_HEIGHT = 32 # SELL-32の固定値
+    BLOCK_WIDTH  = 16 #32*16=512で、これがtapのサイズの上限
     active_cols = num_cols 
-    cores_per_col = 4  # 1列あたりの並列コア数
+    cores_per_col = 4
     num_total_cores = active_cols * cores_per_col
     
-    # 割り切れるかチェック
-    assert M % num_total_cores == 0, "M must be divisible by total number of cores"
-    # m (マイクロカーネルサイズ) でも割り切れるか確認
-    assert (M // num_total_cores) % m == 0, "Rows per core must be divisible by m"
+    blocks_row = M // BLOCK_HEIGHT  #縦のブロック数
+    blocks_col = ell_width // BLOCK_WIDTH  #横のブロック数
+    
+    # チェック: 全ブロック数がコア数とmで割り切れること
+    assert M % BLOCK_HEIGHT == 0, f"M must be a multiple of {BLOCK_HEIGHT}"
+    assert ell_width % BLOCK_WIDTH == 0, f"ell_width must be a multiple of {BLOCK_WIDTH}"
+    assert blocks_row % (num_total_cores) == 0, "blocks_row must be divisible by (cores * m)"
+    assert m ==1 , "m must be 1 in SELL-32 block format design."
+
+    #Kが32の倍数ないと、アライメントでエラーになる。原因は不明。
+    assert K % 32 == 0, "K must be a multiple of 32. if not, this causes output miscalculation. Cause of this problem is unknown."
 
     if dev == "npu" or isinstance(dev, NPU1):
         dev_ty = NPU1()
@@ -45,69 +54,59 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
     else:
         raise AssertionError(f"Unsupported device type: {dev}")
 
-    # --- 型定義 ---
-    # ここが修正の肝です。
-    # L1サイズを「全体」ではなく「1ステップの処理単位(m)」に小さくします。
+    # --- 型定義 (mはブロック数なので、要素数は m * BLOCK_HEIGHT で計算) ---
     
-    # L1 (Core Local): m行分 (約8KB @ m=32, ell=64)
-    L1_A_ty = np.ndarray[(m * ell_width * 2,), dtype_in]
-    # B: ベクトル全体 (K=10000 -> 20KB) ※NPU1(32KB)だとA,B,Stackでギリギリ
+    # L1 (Core Local): mブロック分
+    # 行列Aの1ブロックあたりの要素数 = BLOCK_HEIGHT * BLOCK_WIDTH * 2 (indices + values)
+    L1_A_ty = np.ndarray[( BLOCK_HEIGHT * BLOCK_WIDTH * 2,), dtype_in]
     L1_B_ty = np.ndarray[(K,), dtype_in]
-    # C: 結果の一部 (m行分)
-    L1_C_ty = np.ndarray[(m,), dtype_out]
+    L1_C_ty = np.ndarray[(BLOCK_HEIGHT,), dtype_out]
 
-    # L2 (MemTile): 1列の全コアが1ステップで処理する量 (m * 8行分)
-    L2_A_ty = np.ndarray[(m * cores_per_col * ell_width * 2,), dtype_in]
+    # L2 (MemTile): 1列の全コアが1ステップで持つ量
+    L2_A_ty = np.ndarray[(cores_per_col * BLOCK_HEIGHT * BLOCK_WIDTH * 2,), dtype_in]
     L2_B_ty = np.ndarray[(K,), dtype_in]
-    L2_C_ty = np.ndarray[(m * cores_per_col,), dtype_out]
+    L2_C_ty = np.ndarray[(cores_per_col * BLOCK_HEIGHT,), dtype_out]
 
-    # L3 (Global)
+    # L3 (Global): 全体
     L3_A_ty = np.ndarray[(M * ell_width * 2,), dtype_in]
     L3_B_ty = np.ndarray[(K,), dtype_in] 
     L3_C_ty = np.ndarray[(M,), dtype_out]
 
-    func_type = "vectorized" if vectorized else "scalar"
+    # カーネル定義 (sell32_spmv_kernel)
+    # 引数: [num_blocks(m), ell_width, A_ptr, B_ptr, C_ptr]
     matvec = Kernel(
-        f"sparse_matvec_{func_type}_{dtype_in_str}_{dtype_out_str}",
+        "sell32_block_spmv_vectorized_bf16_bf16",
         "mv.o",
-        [np.int32, np.int32, np.int32, np.int32, L1_A_ty, L1_B_ty, L1_C_ty],
+        [np.int32, np.int32, L1_A_ty, L1_B_ty, L1_C_ty],
     )
 
     workers = []
-    
     col_A_fifos = [] 
     col_B_fifos = [] 
-    col_C_fifos = [] 
+    col_C_fifos = []
     all_A_taps = []
     all_C_taps = []
 
-    # 各コアが何回ループすれば担当分(M/32)を処理しきれるか
-    # 全行Mを、(列数 * 1列あたりの並列数8 * 1回の処理m) で割った回数
-    # これにより Block-Cyclic な処理になります
-    rows_per_col_total = M // active_cols
-    rows_per_step_col = m * cores_per_col
-    iter_count = rows_per_col_total // rows_per_step_col
+    # 各コアが担当する反復回数
+    # 反復回数 = 全ブロック / (全コア数 * 1回あたりのブロック数m)
+    iter_count = blocks_row // (num_total_cores )
+    assert blocks_row % (num_total_cores) == 0, "Total blocks must be divisible by (total cores)"
 
     for col_idx in range(active_cols):
         shim_tile = Tile(col_idx, 0)
         mem_tile = Tile(col_idx, 1)
 
-        # Vector B (Broadcast: K要素)
-        # Bは大きいので depth=1 にしてメモリ節約（Broadcast+Reuseなので1でOKな場合が多い）
+        # Vector B (Broadcast)
         of_B_col = ObjectFifo(L2_B_ty, name=f"B_col_{col_idx}", depth=1)
         col_B_fifos.append(of_B_col)
         
-        #Matrix A (Split Pattern: m行 x 8コア)
+        # Matrix A (Split)
         of_A_col = ObjectFifo(L2_A_ty, name=f"A_col_{col_idx}", depth=2)
         col_A_fifos.append(of_A_col)
 
-        # MemTileのバッファ(m*8行)を、8個のFIFO(m行)に分割
-        A_split_offsets = []
-        A_split_types = []
-        A_core_size = (m * ell_width * 2) 
-        for i in range(cores_per_col):
-            A_split_offsets.append(i * A_core_size)
-            A_split_types.append(L1_A_ty)
+        A_core_size = BLOCK_HEIGHT * BLOCK_WIDTH * 2
+        A_split_offsets = [i * A_core_size for i in range(cores_per_col)]
+        A_split_types = [L1_A_ty for _ in range(cores_per_col)]
 
         of_A_cores = of_A_col.cons().split(
             A_split_offsets,
@@ -115,13 +114,13 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
             placement=mem_tile,
             names=[f"A_core_{col_idx}_{r}" for r in range(cores_per_col)],
         )
-
         
-        # 3. Output C (Join Pattern: m行 x 8コア)
+        # Output C (Join)
         of_C_col = ObjectFifo(L2_C_ty, name=f"C_col_{col_idx}", depth=2)
         col_C_fifos.append(of_C_col)
         
-        C_split_offsets = [i * m for i in range(cores_per_col)]
+        C_core_size = BLOCK_HEIGHT
+        C_split_offsets = [i * C_core_size for i in range(cores_per_col)]
         C_split_types = [L1_C_ty for _ in range(cores_per_col)]
         
         of_C_cores = of_C_col.prod().join(
@@ -131,66 +130,82 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
             names=[f"C_core_{col_idx}_{r}" for r in range(cores_per_col)]
         )
 
-        # Workers
         for r in range(cores_per_col):
             target_tile = Tile(col_idx, 2 + r)
             
             def core_body(A_fifo, B_fifo, C_fifo, matvec_kernel):
-                # ★修正: Bはループの外で1回だけ取得し、ずっと保持する (Reuseパターン)
                 b_local = B_fifo.acquire(1)
                 
-                # AとCは小さく切って何度も流す
                 for _ in range_(iter_count):
-                    a_local = A_fifo.acquire(1)
-                    c_local = C_fifo.acquire(1) # 出力バッファ取得
-                    
-                    # オフセットは常に0 (Splitされているため)
-                    i_i32 = index.casts(T.i32(), index.constant(0))
-                    
-                    # カーネル実行 (m行分)
-                    matvec_kernel(m, K, ell_width, i_i32, a_local, b_local, c_local)
-                    
-                    A_fifo.release(1) # Aは使い終わったので解放（次のデータが来る）
-                    C_fifo.release(1) # Cは書き終わったので解放（MemTileへ送られる）
+                    c_local = C_fifo.acquire(1)
+                    for block_col_num in range_(ell_width // BLOCK_WIDTH):
+                        a_local = A_fifo.acquire(1)
+                        block_col_num_i32 = index.casts(T.i32(), block_col_num) #0の時にresetそれ以外はcからaccをロード
+                        matvec_kernel(BLOCK_WIDTH, block_col_num_i32, a_local, b_local, c_local)
+                        A_fifo.release(1)
+                    C_fifo.release(1)
                 
-                # 全ての計算が終わったらBを解放
                 B_fifo.release(1)
 
             workers.append(
                 Worker(
                     core_body,
-                    [
-                        of_A_cores[r].cons(),
-                        of_B_col.cons(),
-                        of_C_cores[r].prod(),
-                        matvec,
-                    ],
+                    [of_A_cores[r].cons(), of_B_col.cons(), of_C_cores[r].prod(), matvec],
                     placement=target_tile
                 )
             )
 
-        # TAPs (Tensor Access Patterns)
-        # A: 列ごとに担当するデータを切り出す (M/4 行分)
-        # Runtimeが自動的にストリームしてくれるので、ここでは「列全体の範囲」を指定すればOK
-        rows_per_col_total = M // active_cols
+        # --- TAP定義 ---
+        # A: この列が担当するブロック分をスライス
+        # Aは (M, ell_width*2) の要素を持つ
+        blocks_row_per_col = blocks_row // active_cols #一列あたりのブロック数
+
         A_tap = TensorAccessPattern(
-            (M, ell_width * 2),
-            col_idx * rows_per_col_total * ell_width * 2,
-            [1, 1, 1, rows_per_col_total * ell_width * 2],
-            [0, 0, 0, 1]
+            (M, ell_width * 2),                                         #Aの全体形状
+            col_idx * blocks_row_per_col * BLOCK_HEIGHT * ell_width * 2,      #offset
+            [blocks_row_per_col//cores_per_col, blocks_col,cores_per_col ,BLOCK_HEIGHT*BLOCK_WIDTH*2],     #size
+            [BLOCK_HEIGHT*cores_per_col*ell_width*2, BLOCK_HEIGHT*BLOCK_WIDTH*2, BLOCK_HEIGHT*ell_width*2, 1]  #stride
         )
         all_A_taps.append(A_tap)
-
+        # C: この列が担当する結果分をスライス
         C_tap = TensorAccessPattern(
             (1, M),
-            col_idx * rows_per_col_total,
-            [1, 1, 1, rows_per_col_total],
+            col_idx * blocks_row_per_col * BLOCK_HEIGHT,
+            [1, 1, 1, blocks_row_per_col * BLOCK_HEIGHT],
             [0, 0, 0, 1]
         )
         all_C_taps.append(C_tap)
 
 
     rt = Runtime()
+    my_core_events = [
+    # --- 既存の重要な項目 ---
+    trace_utils.CoreEvent.INSTR_VECTOR,       # ベクトル演算 (主役)
+    #trace_utils.CoreEvent.MEMORY_STALL,       # メモリ待ち
+    trace_utils.CoreEvent.LOCK_STALL,         # ロック待ち
+    
+    
+    # 1. 関数のオーバーヘッドを見る
+    trace_utils.CoreEvent.INSTR_EVENT_0,       # EVENT0
+    trace_utils.CoreEvent.INSTR_EVENT_1,       # EVENT1
+    
+    # 2. スカラ/スタック処理を見る (雑用の主犯)
+    trace_utils.CoreEvent.INSTR_LOAD,         # スカラデータのロード (スタック操作など)
+    trace_utils.CoreEvent.INSTR_STORE,        # スカラデータのストア (レジスタ退避など)
+    
+    # 3. データ転送命令を見る (Stallではなく命令実行時間)
+    trace_utils.CoreEvent.INSTR_LOCK_ACQUIRE_REQ, # ロック取得命令そのもの
+    trace_utils.CoreEvent.INSTR_LOCK_RELEASE_REQ, # ロック解放命令そのもの
+    ]
+    my_coremem_events=[
+        MemEvent.DMA_S2MM_0_START_TASK,
+        MemEvent.DMA_S2MM_0_FINISHED_BD,
+        MemEvent.DMA_S2MM_1_FINISHED_BD,
+        MemEvent.DMA_S2MM_0_FINISHED_TASK,
+        MemEvent.DMA_S2MM_0_STALLED_LOCK,
+        MemEvent.DMA_S2MM_0_STREAM_STARVATION,
+        MemEvent.DMA_S2MM_0_MEMORY_BACKPRESSURE,
+    ]
     my_shim_events_mm2s = [
         #下は全部データ送信の際のイベント
         #計算が遅くbufferが空いてない場合に発生する
@@ -237,8 +252,10 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         if trace_ddr_id is not None:
              rt.enable_trace(
                 trace_size=trace_size,
-                workers=[],
+                workers=[workers[0]],
+                coretile_events=my_core_events,
                 shimtile_events=my_shim_events_mix,
+                coremem_events=my_coremem_events,
                 ddr_id=trace_ddr_id
             )
             
@@ -254,6 +271,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
                 A,
                 all_A_taps[col_idx],
                 task_group=tg,
+                wait=True,
                 placement=shim_tile
             )
             
@@ -262,6 +280,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
                 col_B_fifos[col_idx].prod(),
                 B,
                 task_group=tg,
+                wait=True,
                 placement=shim_tile
             )
 

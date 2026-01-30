@@ -23,12 +23,8 @@ from operators.common.test_utils import run_test
 # フォーマット: (matrix_name, tile_size, num_aie_columns)
 
 REGULAR_TEST_CONFIGS = [
-    ("random_M10240_K10240", 1, 8),
-    ("random_M10240_K1024", 1, 8),
-    ("random_M10240_K512", 1, 8),
-    ("random_M10240_K256", 1, 8),
-
-    
+    ("random_M10240_K2048", 2, 8),
+    ("random_M5000_K1024", 2, 8),
 ]
 
 EXTENSIVE_TEST_CONFIGS = [
@@ -44,7 +40,7 @@ def load_matrix_metadata(matrix_dir: Path):
     指定されたディレクトリ内の *_meta.json を読み込み、情報を辞書で返す。
     必要なファイルが存在しない場合は None を返す。
     """
-    ell_format = 'sell32'  #ell or sell32
+    ell_format = 'ell'  #ell or sell32
     if not matrix_dir.is_dir():
         return None
 

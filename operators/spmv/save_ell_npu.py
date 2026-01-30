@@ -18,9 +18,9 @@ COL_ALIGNMENT = 32     # ELLの幅(width)をこの倍数に合わせる
 ROW_ALIGNMENT = 128   # 行数(rows)をこの倍数に合わせる
 
 # [Mode A] Random Settings
-RAND_M = 10240
-RAND_K = 256
-RAND_ELL_WIDTH = 128
+RAND_M = 5000
+RAND_K = 1024
+RAND_ELL_WIDTH = 64
 
 # [Mode B] Download Settings
 SS_GROUP = "ML_Graph"
@@ -42,7 +42,6 @@ def float32_to_bf16_bits_as_uint16(arr_float32):
 
 def pack_for_xdna_ell(ell_data, ell_indices):
     """
-    User confirmed: Planar-like per row format is CORRECT.
     Output: [Row0_Index..., Row0_Val..., Row1_Index..., Row1_Val...]
     """
     rows, width = ell_data.shape
@@ -50,7 +49,6 @@ def pack_for_xdna_ell(ell_data, ell_indices):
     indices_uint16 = ell_indices.astype(np.uint16)
     values_bf16_as_uint16 = float32_to_bf16_bits_as_uint16(ell_data.astype(np.float32))
     
-    # 以前のコード(Planar形式)に戻しました
     combined = np.empty((rows, 2, width), dtype=np.uint16)
     combined[:, 0, :] = indices_uint16        # Indexを先に
     combined[:, 1, :] = values_bf16_as_uint16 # Valueを後に
@@ -251,9 +249,10 @@ def main():
     print(f"  Saved to: {save_dir}")
     print(f"  Buffer: {buffer_kb:.2f} KB")
     print(f"  Metadata: {meta_path}")
+    print(f"  Density: {nonzero_percent:.2f}%")
 
     # 確認表示
-    print_npu_matrix(save_path, aligned_width)
+    #print_npu_matrix(save_path, aligned_width)
 
 def print_npu_matrix(matrix_npy_path, cols):
     npu_data = np.load(matrix_npy_path)
