@@ -36,6 +36,7 @@ def verify_buffer(operator, buf_name, reference, rel_tol=0.04, abs_tol=1e-6, is_
         buf_size =operator.buffers[buf_name]// 2 - operator.trace_size * 2
     else:
         buf_size = operator.buffers[buf_name] // 2
+    print(f"buf_name: {buf_name}, buf_size: {buf_size}, expected size: {len(expected_np)}")
     output = operator.read_buffer(buf_name, (buf_size,))
     if len(output) != len(expected_np):
         print(
@@ -62,7 +63,10 @@ def run_test(
     abs_tol=1e-6,
     warmup_iters=1,
     timed_iters=1,
-    is_traceuse_same_ddr_id=False
+    is_traceuse_same_ddr_id=False,
+    verify=True,
+    measure_mode=False,     # 計測モードスイッチ
+    data_generator=None     # 毎回データを変えるためのジェネレータ関数
 ):
     """
     Run operator test with specified input/output/intermediate buffers.
@@ -85,9 +89,90 @@ def run_test(
     logging.basicConfig(
         level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
     )
-    logger = logging.getLogger(__name__)
     operator.context.compile_all()
     operator.context.prepare_runtime()
+
+    
+    # ==========================================
+    # 計測モード (1セット分のみ実行)
+    # ==========================================
+    if measure_mode:
+        if data_generator is None:
+            raise ValueError("data_generator must be provided in measure_mode")
+
+        # ---------------------------------------------------
+        # 1. データ生成フェーズ (3回分まとめて作る)
+        # ---------------------------------------------------
+        # datasets[0]: Warmup1
+        # datasets[1]: Warmup2
+        # datasets[2]: Measurement
+        datasets = [data_generator() for _ in range(3)]
+
+        # ヘルパー: 書き込み関数
+        def _write_data(inputs, outputs):
+            for buf_name in outputs:
+                buf_size = operator.buffers[buf_name]
+                operator.write_buffer(buf_name, np.zeros(buf_size, dtype=np.uint8))
+            for buf_name, data in inputs.items():
+                if buf_name == "sparse_matrix":
+                    data_np = data
+                else:
+                    data_np = torch_to_numpy(data)
+                operator.write_buffer(buf_name, data_np)
+
+        # ---------------------------------------------------
+        # 2. 実行フェーズ
+        # ---------------------------------------------------
+
+        # --- Step 1: Warmup 1 (計測あり) ---
+        input_buffers,output_buffers = datasets[0]
+        _write_data(input_buffers, output_buffers) 
+        w1_latency_s=operator.run_runlist()
+        
+        w1_latency_us = w1_latency_s * 1e6
+
+        # --- Step 2: Warmup 2 (捨て) ---
+        input_buffers,output_buffers = datasets[1]
+        _write_data(input_buffers, output_buffers)
+        operator.run_runlist()
+
+        # --- Step 3: 本番計測 (計測 + 検証) ---
+        input_buffers,output_buffers = datasets[2]
+        _write_data(input_buffers, output_buffers)
+        
+
+        latency_s=operator.run_runlist()
+        latency_us = latency_s * 1e6
+
+        # 検証 (3回目のデータを使用)
+        errors = {}
+        if verify:
+            for buf_name, expected in output_buffers.items():
+                buf_errors = verify_buffer(operator, buf_name, expected, rel_tol, abs_tol, is_traceuse_same_ddr_id)
+                if buf_errors:
+                    errors[buf_name] = buf_errors
+
+        # データサイズ計算
+        input_bytes = sum(operator.buffers[buf_name] for buf_name in input_buffers)
+        output_bytes = sum(operator.buffers[buf_name] for buf_name in output_buffers)
+        total_bytes = input_bytes + output_bytes
+        
+        bandwidth_gbps = total_bytes / (latency_us * 1e-6) / 1e9
+
+        # 1回分の結果を返す
+        single_run_stats = {
+            "latency": latency_us,
+            "w1_latency": w1_latency_us,
+            "total_bytes": total_bytes
+        }
+        
+        # メモリ解放
+        del datasets
+
+        return errors, latency_us, bandwidth_gbps, single_run_stats
+    # ==========================================
+    # 通常モード
+    # ==========================================
 
     # Run warmup iterations before writing to buffers (warmup iters might corrupt the buffers)
     for _ in range(warmup_iters):
@@ -99,7 +184,11 @@ def run_test(
         operator.write_buffer(buf_name, np.zeros(buf_size, dtype=np.uint8))
     # Operator may share the same buffer object for inputs and outputs; hence, write input after outputs
     for buf_name, data in input_buffers.items():
-        data_np = torch_to_numpy(data)
+        if buf_name=="sparse_matrix":
+            #sparse matrix is already numpy
+            data_np = data
+        else:
+            data_np = torch_to_numpy(data)
         operator.write_buffer(buf_name, data_np)
 
     # Run operator
@@ -111,20 +200,36 @@ def run_test(
 
     # Verify outputs
     errors = {}
-    for buf_name, expected in output_buffers.items():
-        buf_errors = verify_buffer(operator, buf_name, expected, rel_tol, abs_tol, is_traceuse_same_ddr_id)
-        if buf_errors:
-            errors[buf_name] = buf_errors
+    if verify:
 
-    for buf_name, expected in intermediate_buffers.items():
-        buf_errors = verify_buffer(operator, buf_name, expected, rel_tol, abs_tol)
-        if buf_errors:
-            errors[buf_name] = buf_errors
+        for buf_name, expected in output_buffers.items():
+            buf_errors = verify_buffer(operator, buf_name, expected, rel_tol, abs_tol, is_traceuse_same_ddr_id)
+            if buf_errors:
+                errors[buf_name] = buf_errors
+
+        for buf_name, expected in intermediate_buffers.items():
+            buf_errors = verify_buffer(operator, buf_name, expected, rel_tol, abs_tol)
+            if buf_errors:
+                errors[buf_name] = buf_errors
 
     # Calculate bandwidth
     input_bytes = sum(operator.buffers[buf_name] for buf_name in input_buffers)
+    #bufとそのサイズをprintする
+    for buf_name in input_buffers:
+        print(f"Input Buffer: {buf_name}, Size (bytes): {operator.buffers[buf_name]}")
+    for buf_name in output_buffers:
+        print(f"Output Buffer: {buf_name}, Size (bytes): {operator.buffers[buf_name]}")
     output_bytes = sum(operator.buffers[buf_name] for buf_name in output_buffers)
     total_bytes = input_bytes + output_bytes
     bandwidth_gbps = total_bytes / (latency_us * 1e-6) / 1e9
+    if "sparse_matrix" in input_buffers:
+        #sparseではなく、密行列が転送されたとして計算
+        M = operator.M
+        K = operator.K
+        matrix_bytes = M * K * 2  # bfloat16
+        total_bytes = matrix_bytes + operator.buffers['vector'] + output_bytes
+        bandwidth_gbps_dense = total_bytes / (latency_us * 1e-6) / 1e9
+        print(f"Sparse matrix treated as dense for bandwidth calculation: {bandwidth_gbps_dense:.2f} GB/s")
+
 
     return errors, latency_us, bandwidth_gbps

@@ -461,7 +461,7 @@ class PeanoCompilationRule(CompilationRule):
                 raise RuntimeError(
                     "Expected KernelObject dependency to be a C source file"
                 )
-
+            #"--save-temps"を入れると中間生成物が残るがエラー
             cmd = (
                 [
                     str(clang_path),

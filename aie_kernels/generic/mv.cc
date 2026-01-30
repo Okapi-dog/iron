@@ -17,7 +17,7 @@ extern "C" void event1();
 
 #include <aie_api/aie.hpp>
 
-void matvec_scalar(uint32_t m, uint32_t k, uint32_t row_offset, bfloat16 *a, bfloat16 *b, bfloat16 *c)
+void matvec_scalar(uint32_t m, uint32_t k, uint32_t row_offset, bfloat16 *__restrict a, bfloat16 *__restrict b, bfloat16 *__restrict c)
 {
     for (uint32_t row = 0; row < m; row++) {
         float acc = 0;
@@ -47,7 +47,7 @@ void matvec_vectorized(uint32_t m,
         // two. This assumption should hold for any useful use of this function; if k were one, this would be a simple
         // scalar multiplication of a vector.
         #pragma clang loop pipeline(disable)
-        AIE_LOOP_MIN_ITERATION_COUNT(8)
+        AIE_LOOP_MIN_ITERATION_COUNT(r)
         
         for (const bfloat16 *__restrict b_cur = b; b_cur < b_end; b_cur += r, a += r) {
             aie::vector<bfloat16, r> a_vec = aie::load_v<r>(a);
@@ -64,9 +64,9 @@ extern "C" {
 void matvec_scalar_bf16_bf16(uint32_t m,
                              uint32_t k,
                              uint32_t row_offset,
-                             bfloat16 *a_in,
-                             bfloat16 *b_in,
-                             bfloat16 *c_out)
+                             bfloat16 *__restrict a_in,
+                             bfloat16 *__restrict b_in,
+                             bfloat16 *__restrict c_out)
 {
     matvec_scalar(m, k, row_offset, a_in, b_in, c_out);
 }
@@ -74,9 +74,9 @@ void matvec_scalar_bf16_bf16(uint32_t m,
 void matvec_vectorized_bf16_bf16(uint32_t m,
                                  uint32_t k,
                                  uint32_t row_offset,
-                                 bfloat16 *a_in,
-                                 bfloat16 *b_in,
-                                 bfloat16 *c_out)
+                                 bfloat16 *__restrict a_in,
+                                 bfloat16 *__restrict b_in,
+                                 bfloat16 *__restrict c_out)
 {
     matvec_vectorized<64>(m, k, row_offset, a_in, b_in, c_out);
 }
