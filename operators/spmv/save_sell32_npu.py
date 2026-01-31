@@ -17,9 +17,9 @@ BLOCK_ALIGNMENT = 32    # ブロック数のアライメント単位 (例: 128�
 ELL_WIDTH_ALIGNMENT = 1  # ELL幅のアライメント単位 (例: 1ならアライメントなし、4なら4の倍数)
 
 # [Mode A] Random
-RAND_M = 10240
-RAND_K = 28640
-RAND_ELL_WIDTH = 128
+RAND_M = 5120
+RAND_K = 2048
+RAND_ELL_WIDTH = 32
 
 # [Mode B] Download
 SS_GROUP = "ML_Graph"

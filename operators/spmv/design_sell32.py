@@ -21,18 +21,15 @@ from aie.iron.device import NPU1, NPU2, Tile
 from aie.utils import trace as trace_utils
 from aie.utils.trace_events_enum import CoreEvent, MemEvent, ShimTileEvent, MemTileEvent
 
-def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=65536):
+def my_matvec(dev, M, K, ell_width, m, num_core_rows, num_core_cols, trace_ddr_id=None, trace_size=65536):
     vectorized = True 
     dtype_in = np.dtype[bfloat16]
     dtype_in_str = "bf16"
     dtype_out = np.dtype[bfloat16]
     dtype_out_str = "bf16"
-
     # 設定
-    BLOCK_SIZE = 32 # SELL-32の固定値
-    active_cols = num_cols 
-    cores_per_col = 4
-    num_total_cores = active_cols * cores_per_col
+    BLOCK_SIZE = 32 # SELL-32の固定値 
+    num_total_cores = num_core_cols * num_core_rows
     
     # 全体のブロック数
     total_blocks = M // BLOCK_SIZE
@@ -60,9 +57,9 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
     L1_C_ty = np.ndarray[(m * BLOCK_SIZE,), dtype_out]
 
     # L2 (MemTile): 1列の全コアが1ステップで持つ量
-    L2_A_ty = np.ndarray[(m * cores_per_col * BLOCK_SIZE * ell_width * 2,), dtype_in]
+    L2_A_ty = np.ndarray[(m * num_core_rows * BLOCK_SIZE * ell_width * 2,), dtype_in]
     L2_B_ty = np.ndarray[(K,), dtype_in]
-    L2_C_ty = np.ndarray[(m * cores_per_col * BLOCK_SIZE,), dtype_out]
+    L2_C_ty = np.ndarray[(m * num_core_rows * BLOCK_SIZE,), dtype_out]
 
     # L3 (Global): 全体
     L3_A_ty = np.ndarray[(M * ell_width * 2,), dtype_in]
@@ -89,7 +86,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
     iter_count = total_blocks // (num_total_cores * m)
     assert total_blocks % (num_total_cores * m) == 0, "Total blocks must be divisible by (total cores * m)"
 
-    for col_idx in range(active_cols):
+    for col_idx in range(num_core_cols):
         shim_tile = Tile(col_idx, 0)
         mem_tile = Tile(col_idx, 1)
 
@@ -102,14 +99,14 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         col_A_fifos.append(of_A_col)
 
         A_core_size = m * BLOCK_SIZE * ell_width * 2
-        A_split_offsets = [i * A_core_size for i in range(cores_per_col)]
-        A_split_types = [L1_A_ty for _ in range(cores_per_col)]
+        A_split_offsets = [i * A_core_size for i in range(num_core_rows)]
+        A_split_types = [L1_A_ty for _ in range(num_core_rows)]
 
         of_A_cores = of_A_col.cons().split(
             A_split_offsets,
             obj_types=A_split_types,
             placement=mem_tile,
-            names=[f"A_core_{col_idx}_{r}" for r in range(cores_per_col)],
+            names=[f"A_core_{col_idx}_{r}" for r in range(num_core_rows)],
         )
         
         # Output C (Join)
@@ -117,17 +114,17 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         col_C_fifos.append(of_C_col)
         
         C_core_size = m * BLOCK_SIZE
-        C_split_offsets = [i * C_core_size for i in range(cores_per_col)]
-        C_split_types = [L1_C_ty for _ in range(cores_per_col)]
+        C_split_offsets = [i * C_core_size for i in range(num_core_rows)]
+        C_split_types = [L1_C_ty for _ in range(num_core_rows)]
         
         of_C_cores = of_C_col.prod().join(
             C_split_offsets,
             obj_types=C_split_types,
             placement=mem_tile,
-            names=[f"C_core_{col_idx}_{r}" for r in range(cores_per_col)]
+            names=[f"C_core_{col_idx}_{r}" for r in range(num_core_rows)]
         )
 
-        for r in range(cores_per_col):
+        for r in range(num_core_rows):
             target_tile = Tile(col_idx, 2 + r)
             
             def core_body(A_fifo, B_fifo, C_fifo, matvec_kernel):
@@ -156,8 +153,8 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         # --- TAP定義 ---
         # A: この列が担当するブロック分をスライス
         # Aは (M, ell_width*2) の要素を持つ
-        blocks_per_col = total_blocks // active_cols
-        assert total_blocks % active_cols == 0, "Total blocks must be divisible by active columns"
+        blocks_per_col = total_blocks // num_core_cols
+        assert total_blocks % num_core_cols == 0, "Total blocks must be divisible by active columns"
         A_tap = TensorAccessPattern(
             (M, ell_width * 2),                                         #Aの全体形状
             col_idx * blocks_per_col * BLOCK_SIZE * ell_width * 2,      #offset
@@ -260,7 +257,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         rt.start(*workers)
         tg = rt.task_group()
         
-        for col_idx in range(active_cols):
+        for col_idx in range(num_core_cols):
             shim_tile = Tile(col_idx, 0)
             
             # A: ストリーミング転送 (iter_count回分のデータが自動で流れる)
@@ -269,7 +266,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
                 A,
                 all_A_taps[col_idx],
                 task_group=tg,
-                wait=True,
+                wait=False,
                 placement=shim_tile
             )
             
@@ -278,11 +275,11 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
                 col_B_fifos[col_idx].prod(),
                 B,
                 task_group=tg,
-                wait=True,
+                wait=False,
                 placement=shim_tile
             )
 
-        for col_idx in range(active_cols):
+        for col_idx in range(num_core_cols):
             shim_tile = Tile(col_idx, 0)
             rt.drain(
                 col_C_fifos[col_idx].cons(),
@@ -307,7 +304,8 @@ def main():
     argparser.add_argument("-K", type=int, default=10000)
     argparser.add_argument("-ell_width", type=int, default=64)
     argparser.add_argument("-m", type=int, default=32)
-    argparser.add_argument("--cols", type=int, default=4)
+    argparser.add_argument("--rows", type=int, default=4)
+    argparser.add_argument("--cols", type=int, default=8)
     argparser.add_argument(
         "--output-file-path",
         "-o",
@@ -317,7 +315,7 @@ def main():
     )
     args = argparser.parse_args()
     
-    module = my_matvec(args.dev, args.cols, args.M, args.K, args.ell_width, args.m)
+    module = my_matvec(args.dev, args.M, args.K, args.ell_width, args.m, args.rows, args.cols)
 
     output_file_path = Path(args.output_file_path)
     with open(output_file_path, "w") as f:

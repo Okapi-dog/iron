@@ -20,11 +20,15 @@ from operators.common.test_utils import run_test
 # ==========================================
 # 1. テスト設定 (ここを編集してテストケースを追加・変更)
 # ==========================================
-# フォーマット: (matrix_name, tile_size, num_aie_columns)
+# フォーマット: (matrix_name, tile_size, num_core_rows, num_core_cols)
+design_name = "ell" # "ell" or "sell32" or "sell32_block"
 
 REGULAR_TEST_CONFIGS = [
-    ("random_M10240_K2048", 2, 8),
-    ("random_M5000_K1024", 2, 8),
+    ("random_M5120_K2048", 10, 1, 1),
+    ("random_M10240_K2048", 10, 1, 1),
+    ("random_M61440_K2048", 10, 1, 1),
+    ("random_M184320_K2048", 10, 1, 1),
+    ("random_M368640_K2048", 80, 1, 1),
 ]
 
 EXTENSIVE_TEST_CONFIGS = [
@@ -35,12 +39,12 @@ EXTENSIVE_TEST_CONFIGS = [
 # 2. ヘルパー関数 (JSON読み込み・スキャン)
 # ==========================================
 
-def load_matrix_metadata(matrix_dir: Path):
+def load_matrix_metadata(matrix_dir: Path, ell_format):
     """
     指定されたディレクトリ内の *_meta.json を読み込み、情報を辞書で返す。
     必要なファイルが存在しない場合は None を返す。
+    ell_format: "ell" or "sell32"
     """
-    ell_format = 'ell'  #ell or sell32
     if not matrix_dir.is_dir():
         return None
 
@@ -61,7 +65,6 @@ def load_matrix_metadata(matrix_dir: Path):
     
     # npyファイルのパスを確認
     npy_path = matrix_dir / f"{matrix_name}_xdna_{ell_format}.npy"
-    #_xdna_uint16.npy or _xdna_sell32.npy
     if not npy_path.exists():
         print(f"[WARNING] NPY file not found for {matrix_name}: {npy_path}")
         return None
@@ -75,7 +78,7 @@ def load_matrix_metadata(matrix_dir: Path):
         "npy_path": str(npy_path)
     }
 
-def scan_available_matrices(base_dir: Path):
+def scan_available_matrices(base_dir: Path, ell_format):
     """
     base_dir 以下の全ディレクトリを走査し、利用可能な行列データを辞書化して返す。
     Returns:
@@ -87,7 +90,7 @@ def scan_available_matrices(base_dir: Path):
         return matrix_map
 
     for item in base_dir.iterdir():
-        meta = load_matrix_metadata(item)
+        meta = load_matrix_metadata(item, ell_format)
         if meta:
             matrix_map[meta["name"]] = meta
             
@@ -104,13 +107,14 @@ def generate_test_params(test_configs):
     base_dir = Path("npu_data")
     
     # 1. 利用可能な行列データをスキャン
-    available_matrices = scan_available_matrices(base_dir)
+    ell_format = "sell32" if "sell32" in design_name else "ell"
+    available_matrices = scan_available_matrices(base_dir, ell_format=ell_format)
     
     params = []
     names = []
 
     # 2. 設定リストに基づいてパラメータを構築
-    for matrix_name, tile_size, num_aie_columns in test_configs:
+    for matrix_name, tile_size, num_core_rows, num_core_cols in test_configs:
         
         # 設定にある名前が、実際のデータフォルダに存在するか確認
         if matrix_name not in available_matrices:
@@ -119,19 +123,20 @@ def generate_test_params(test_configs):
             
         meta = available_matrices[matrix_name]
         
-        # param: (npy_path, M, K, ell_width, num_aie_columns, tile_size)
+        # param: (npy_path, M, K, ell_width, tile_size, num_core_rows, num_core_cols)
         params.append((
             meta["npy_path"],
             meta["rows"],
             meta["cols"],
             meta["ell_width"],
-            num_aie_columns,
-            tile_size
+            tile_size,
+            num_core_rows,
+            num_core_cols,
         ))
         
         # テストケース名
         names.append(
-            f"{matrix_name}_{meta['rows']}x{meta['cols']}_{meta['ell_width']}ell_{tile_size}t_{num_aie_columns}col"
+            f"{matrix_name}_{meta['rows']}x{meta['cols']}_ellwidth{meta['ell_width']}_tile{tile_size}_core{num_core_rows}x{num_core_cols}"
         )
         
     return params, names
@@ -172,15 +177,15 @@ def save_trace(operator, filename_suffix=""):
                 # ファイル名の生成ルール (ユーザー提示のコードに基づく)
                 # prefix は外部から不明な場合があるためワイルドカード '*' で吸収します
                 prefix="spmv_"
-                trace_suffix = f"_traceddr{operator.trace_ddr_id}"
+                trace_suffix = f"_traceddr{operator.trace_ddr_id}" if operator.trace_ddr_id is not None else ""
                 
-                # 検索パターン: *{cols}c_{M}x{K}_{tile}t{trace_suffix}.mlir
+                # 検索パターン: f"{prefix}{self.M}x{self.K}_ellwidth{self.ell_width}_tile{self.tile_size}_core{self.num_core_rows}x{self.num_core_cols}{trace_suffix}.mlir"
                 file_pattern = (
                     f"{prefix}"
-                    f"{operator.num_aie_columns}c_"
                     f"{operator.M}x{operator.K}_"
-                    f"{operator.ell_width}ell_"
-                    f"{operator.tile_size}t"
+                    f"ellwidth{operator.ell_width}_"
+                    f"tile{operator.tile_size}_"
+                    f"core{operator.num_core_rows}x{operator.num_core_cols}"
                     f"{trace_suffix}.mlir"
                 )
 
@@ -223,20 +228,21 @@ def save_trace(operator, filename_suffix=""):
     Bandwidth=r"Effective Bandwidth: (?P<value>[\d\.e\+-]+) GB/s",
     Throughput=r"Throughput: (?P<value>[\d\.e\+-]+) GFLOP/s",
 )
-@pytest.mark.parametrize("npy_path,M,K,ell_width,num_aie_columns,tile_size", all_params)
-def test_spmv(npy_path, M, K, ell_width, num_aie_columns, tile_size, aie_context):
+@pytest.mark.parametrize("npy_path,M,K,ell_width,tile_size,num_core_rows,num_core_cols", all_params)
+def test_spmv(npy_path, M, K, ell_width, tile_size, num_core_rows, num_core_cols, aie_context):
 
     operator = AIESPMV(
         M=M,
         K=K,
         ell_width=ell_width,
-        num_aie_columns=num_aie_columns,
         tile_size=tile_size,
+        num_core_rows=num_core_rows,
+        num_core_cols=num_core_cols,
+        design_name=design_name,
         context=aie_context,
         trace_ddr_id=None,#3
         trace_size=8192*4,
     )
-    ell_format = 'sell32' if 'sell32' in npy_path else 'ell'
     golden_ref = generate_reference_from_mtx(npy_path=npy_path)
     print(f"Loading matrix from: {npy_path}")
     npu_data = np.load(npy_path)
@@ -246,16 +252,13 @@ def test_spmv(npy_path, M, K, ell_width, num_aie_columns, tile_size, aie_context
     print(f"Matrix Rows(cal by npu data and ell_width): {npu_data.shape[0] // (ell_width*2)}")
     if npu_data.shape[0]/(ell_width*2) != M:
         raise AssertionError("NPU data shape does not match expected matrix dimensions.")
-    #row数がcore*tile_sizeの倍数であるか？
-    if (M % (num_aie_columns * tile_size) != 0) and ell_format == 'ell':
-        raise AssertionError("Matrix row count M is not a multiple of num_aie_columns * tile_size.")
 
     input_buffers = {"sparse_matrix": npu_data, "vector": golden_ref["B"].to(torch.bfloat16)}
     output_buffers = {"output": golden_ref["C"]}
     errors, latency_us, bandwidth_gbps = run_test(
         operator, input_buffers, output_buffers, rel_tol=0.04, abs_tol=1e-4, warmup_iters=2, verify=True
     )
-    save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_aie_columns}col")
+    save_trace(operator, filename_suffix=f"{M}_{K}_{tile_size}_{num_core_cols}col")
     print(f"\nLatency: {latency_us:.1f} us")
     gflops = (2.0 * M * K) / (latency_us * 1e-6) / 1e9
     print(f"Throughput: {gflops:.6e} GFLOP/s")

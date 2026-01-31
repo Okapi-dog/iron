@@ -32,11 +32,11 @@ void sparse_matvec_vectorized_aligned(uint32_t m,
     c += row_offset * m;
     const uint32_t row_stride = 2 * ell_width;
     const bfloat16 *ptr_base = a;
-    const uint16_t *__restrict ptr_idx = reinterpret_cast<const uint16_t*>(ptr_base);
-    const bfloat16 *__restrict ptr_val = ptr_base + ell_width;
-    //AIE_PREPARE_FOR_PIPELINING
-    //AIE_LOOP_MIN_ITERATION_COUNT(2)
+    AIE_PREPARE_FOR_PIPELINING
+    AIE_LOOP_MIN_ITERATION_COUNT(10)
     for (uint32_t row = 0; row < m; row++) {
+        const uint16_t *__restrict ptr_idx = reinterpret_cast<const uint16_t*>(ptr_base);
+        const bfloat16 *__restrict ptr_val = ptr_base + ell_width;
 
         // 仕様書にある "fp32 accumulator" を使用
         aie::accum<accfloat, r> acc = aie::zeros<accfloat, r>();
@@ -68,13 +68,12 @@ void sparse_matvec_vectorized_aligned(uint32_t m,
 
         // Store
         c[row] = static_cast<bfloat16>(total);
-        ptr_idx += row_stride;
-        ptr_val += row_stride;
+        
+        ptr_base += row_stride;
     }
     event1();
 }
 
-template <uint32_t r = 32> 
 void sell32_spmv_kernel(
     uint32_t num_blocks,
     uint32_t ell_width,
@@ -100,7 +99,7 @@ void sell32_spmv_kernel(
 
         // 最低反復回数の保証（パイプライン充填のため）
         AIE_PREPARE_FOR_PIPELINING
-        AIE_LOOP_MIN_ITERATION_COUNT(8)
+        AIE_LOOP_MIN_ITERATION_COUNT(4)
         for (uint32_t k = 0; k < ell_width; k++) {
             
             // 1. ロード (Load Units)
@@ -139,7 +138,6 @@ void sell32_spmv_kernel(
     event1();
 }
 
-template <uint32_t r = 32> 
 void sell32_spmv_kernel_32wide(
     uint32_t num_blocks,
     uint32_t ell_width,
@@ -164,10 +162,9 @@ void sell32_spmv_kernel_32wide(
 
         aie::accum<accfloat, 32> acc = aie::zeros<accfloat, 32>();
 
-
         // パイプライン化指示
         AIE_PREPARE_FOR_PIPELINING
-        AIE_LOOP_MIN_ITERATION_COUNT(10)
+        AIE_LOOP_MIN_ITERATION_COUNT(16)
         for (uint32_t k = 0; k < ell_width; k++) {
             
             aie::vector<uint16_t, 32> idx = aie::load_v<32>(ptr_idx);
@@ -225,7 +222,7 @@ void sell32_spmv_kernel_32_block(
     }
     // パイプライン化指示
     AIE_PREPARE_FOR_PIPELINING
-    AIE_LOOP_MIN_ITERATION_COUNT(10)
+    AIE_LOOP_MIN_ITERATION_COUNT(16)
     for (uint32_t k = 0; k < ell_width; k++) {
         
         aie::vector<uint16_t, 32> idx = aie::load_v<32>(ptr_idx);
@@ -275,7 +272,7 @@ void sell32_spmv_vectorized_bf16_bf16(
     bfloat16 *__restrict vec_y
 )
 {
-    sell32_spmv_kernel_32wide<32>(num_blocks, ell_width, data_ptr, vec_x, vec_y);
+    sell32_spmv_kernel_32wide(num_blocks, ell_width, data_ptr, vec_x, vec_y);
 }
 void sell32_block_spmv_vectorized_bf16_bf16(
     uint32_t ell_width,

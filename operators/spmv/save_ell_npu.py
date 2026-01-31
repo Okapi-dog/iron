@@ -18,9 +18,9 @@ COL_ALIGNMENT = 32     # ELLの幅(width)をこの倍数に合わせる
 ROW_ALIGNMENT = 128   # 行数(rows)をこの倍数に合わせる
 
 # [Mode A] Random Settings
-RAND_M = 5000
-RAND_K = 1024
-RAND_ELL_WIDTH = 64
+RAND_M = 368640
+RAND_K = 2048
+RAND_ELL_WIDTH = 32
 
 # [Mode B] Download Settings
 SS_GROUP = "ML_Graph"

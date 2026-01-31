@@ -29,8 +29,10 @@ class AIESPMV(AIEOperatorBase):
         M,
         K,
         ell_width,
-        num_aie_columns=1,
         tile_size=1,
+        num_core_rows=1,
+        num_core_cols=1,
+        design_name="sell32_block", # "ell" or "sell32" or "sell32_block"
         is_mv=True,
         use_static_weight=False,
         context=None,
@@ -41,8 +43,10 @@ class AIESPMV(AIEOperatorBase):
         self.M = M  # matrix rows  (if is_mv=False, matrix columns)
         self.K = K  # matrix columns, vector rows  (if is_mv=False, matrix rows, vector columns)
         self.ell_width = ell_width
-        self.num_aie_columns = num_aie_columns
         self.tile_size = tile_size
+        self.num_core_rows = num_core_rows
+        self.num_core_cols = num_core_cols
+        self.design_name = design_name
         self.is_mv = is_mv
         self.trace_ddr_id = trace_ddr_id
         self.trace_size = trace_size
@@ -66,20 +70,21 @@ class AIESPMV(AIEOperatorBase):
         trace_suffix = f"_traceddr{self.trace_ddr_id}" if self.trace_ddr_id is not None else ""
         operator_dir = Path(__file__).parent
         file_name_base = (
-            f"{prefix}{self.num_aie_columns}c_{self.M}x{self.K}_{self.ell_width}ell_{self.tile_size}t{trace_suffix}"
+            f"{prefix}{self.M}x{self.K}_ellwidth{self.ell_width}_tile{self.tile_size}_core{self.num_core_rows}x{self.num_core_cols}{trace_suffix}"
         )
 
         mlir_artifact = PythonGeneratedMLIRArtifact.new(
             f"{file_name_base}.mlir",
-            import_path=operator_dir / "design_ell.py",
+            import_path=operator_dir / f"design_{self.design_name}.py",
             callback_fn="my_matvec",
             callback_args=[
                 self.context.device_manager.device_type,
-                self.num_aie_columns,
                 self.M,
                 self.K,
                 self.ell_width,
                 self.tile_size,
+                self.num_core_rows,
+                self.num_core_cols,
                 self.trace_ddr_id,
                 self.trace_size,
             ],

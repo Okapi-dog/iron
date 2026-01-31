@@ -21,22 +21,19 @@ from aie.iron.device import NPU1, NPU2, Tile
 from aie.utils import trace as trace_utils
 from aie.utils.trace_events_enum import CoreEvent, MemEvent, ShimTileEvent, MemTileEvent
 
-def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=65536):
+def my_matvec(dev, M, K, ell_width, m, num_core_rows, num_core_cols, trace_ddr_id=None, trace_size=65536):
     vectorized = True 
     dtype_in = np.dtype[bfloat16]
     dtype_in_str = "bf16"
     dtype_out = np.dtype[bfloat16]
     dtype_out_str = "bf16"
 
-    # 設定
-    active_cols = num_cols 
-    cores_per_col = 4  # 1列あたりの並列コア数
-    num_total_cores = active_cols * cores_per_col
+    num_total_cores = num_core_rows * num_core_cols
     
     # 割り切れるかチェック
-    assert M % num_total_cores == 0, "M must be divisible by total number of cores"
-    # m (マイクロカーネルサイズ) でも割り切れるか確認
-    assert (M // num_total_cores) % m == 0, "Rows per core must be divisible by m"
+    assert M % (num_total_cores * m) == 0, "M must be divisible by total number of cores times m"
+
+    assert m>=2, "m must be at least 2 for DMA transfer minimum size on output C transfer"
 
     if dev == "npu" or isinstance(dev, NPU1):
         dev_ty = NPU1()
@@ -57,9 +54,9 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
     L1_C_ty = np.ndarray[(m,), dtype_out]
 
     # L2 (MemTile): 1列の全コアが1ステップで処理する量 (m * 8行分)
-    L2_A_ty = np.ndarray[(m * cores_per_col * ell_width * 2,), dtype_in]
+    L2_A_ty = np.ndarray[(m * num_core_rows * ell_width * 2,), dtype_in]
     L2_B_ty = np.ndarray[(K,), dtype_in]
-    L2_C_ty = np.ndarray[(m * cores_per_col,), dtype_out]
+    L2_C_ty = np.ndarray[(m * num_core_rows,), dtype_out]
 
     # L3 (Global)
     L3_A_ty = np.ndarray[(M * ell_width * 2,), dtype_in]
@@ -84,11 +81,11 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
     # 各コアが何回ループすれば担当分(M/32)を処理しきれるか
     # 全行Mを、(列数 * 1列あたりの並列数8 * 1回の処理m) で割った回数
     # これにより Block-Cyclic な処理になります
-    rows_per_col_total = M // active_cols
-    rows_per_step_col = m * cores_per_col
+    rows_per_col_total = M // num_core_cols
+    rows_per_step_col = m * num_core_rows
     iter_count = rows_per_col_total // rows_per_step_col
 
-    for col_idx in range(active_cols):
+    for col_idx in range(num_core_cols):
         shim_tile = Tile(col_idx, 0)
         mem_tile = Tile(col_idx, 1)
 
@@ -105,7 +102,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         A_split_offsets = []
         A_split_types = []
         A_core_size = (m * ell_width * 2) 
-        for i in range(cores_per_col):
+        for i in range(num_core_rows):
             A_split_offsets.append(i * A_core_size)
             A_split_types.append(L1_A_ty)
 
@@ -113,7 +110,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
             A_split_offsets,
             obj_types=A_split_types,
             placement=mem_tile,
-            names=[f"A_core_{col_idx}_{r}" for r in range(cores_per_col)],
+            names=[f"A_core_{col_idx}_{r}" for r in range(num_core_rows)],
         )
 
         
@@ -121,18 +118,18 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         of_C_col = ObjectFifo(L2_C_ty, name=f"C_col_{col_idx}", depth=2)
         col_C_fifos.append(of_C_col)
         
-        C_split_offsets = [i * m for i in range(cores_per_col)]
-        C_split_types = [L1_C_ty for _ in range(cores_per_col)]
+        C_split_offsets = [i * m for i in range(num_core_rows)]
+        C_split_types = [L1_C_ty for _ in range(num_core_rows)]
         
         of_C_cores = of_C_col.prod().join(
             C_split_offsets,
             obj_types=C_split_types,
             placement=mem_tile,
-            names=[f"C_core_{col_idx}_{r}" for r in range(cores_per_col)]
+            names=[f"C_core_{col_idx}_{r}" for r in range(num_core_rows)]
         )
 
         # Workers
-        for r in range(cores_per_col):
+        for r in range(num_core_rows):
             target_tile = Tile(col_idx, 2 + r)
             
             def core_body(A_fifo, B_fifo, C_fifo, matvec_kernel):
@@ -172,7 +169,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         # TAPs (Tensor Access Patterns)
         # A: 列ごとに担当するデータを切り出す (M/4 行分)
         # Runtimeが自動的にストリームしてくれるので、ここでは「列全体の範囲」を指定すればOK
-        rows_per_col_total = M // active_cols
+        rows_per_col_total = M // num_core_cols
         A_tap = TensorAccessPattern(
             (M, ell_width * 2),
             col_idx * rows_per_col_total * ell_width * 2,
@@ -191,6 +188,34 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
 
 
     rt = Runtime()
+    my_core_events = [
+    # --- 既存の重要な項目 ---
+    trace_utils.CoreEvent.INSTR_VECTOR,       # ベクトル演算 (主役)
+    #trace_utils.CoreEvent.MEMORY_STALL,       # メモリ待ち
+    trace_utils.CoreEvent.LOCK_STALL,         # ロック待ち
+    
+    
+    # 1. 関数のオーバーヘッドを見る
+    trace_utils.CoreEvent.INSTR_EVENT_0,       # EVENT0
+    trace_utils.CoreEvent.INSTR_EVENT_1,       # EVENT1
+    
+    # 2. スカラ/スタック処理を見る (雑用の主犯)
+    trace_utils.CoreEvent.INSTR_LOAD,         # スカラデータのロード (スタック操作など)
+    trace_utils.CoreEvent.INSTR_STORE,        # スカラデータのストア (レジスタ退避など)
+    
+    # 3. データ転送命令を見る (Stallではなく命令実行時間)
+    trace_utils.CoreEvent.INSTR_LOCK_ACQUIRE_REQ, # ロック取得命令そのもの
+    trace_utils.CoreEvent.INSTR_LOCK_RELEASE_REQ, # ロック解放命令そのもの
+    ]
+    my_coremem_events=[
+        MemEvent.DMA_S2MM_0_START_TASK,
+        MemEvent.DMA_S2MM_0_FINISHED_BD,
+        MemEvent.DMA_S2MM_1_FINISHED_BD,
+        MemEvent.DMA_S2MM_0_FINISHED_TASK,
+        MemEvent.DMA_S2MM_0_STALLED_LOCK,
+        MemEvent.DMA_S2MM_0_STREAM_STARVATION,
+        MemEvent.DMA_S2MM_0_MEMORY_BACKPRESSURE,
+    ]
     my_shim_events_mm2s = [
         #下は全部データ送信の際のイベント
         #計算が遅くbufferが空いてない場合に発生する
@@ -237,15 +262,17 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
         if trace_ddr_id is not None:
              rt.enable_trace(
                 trace_size=trace_size,
-                workers=[],
+                workers=[workers[0]],
+                coretile_events=my_core_events,
                 shimtile_events=my_shim_events_mix,
+                coremem_events=my_coremem_events,
                 ddr_id=trace_ddr_id
             )
             
         rt.start(*workers)
         tg = rt.task_group()
         
-        for col_idx in range(active_cols):
+        for col_idx in range(num_core_cols):
             shim_tile = Tile(col_idx, 0)
             
             # A: ストリーミング転送 (iter_count回分のデータが自動で流れる)
@@ -265,7 +292,7 @@ def my_matvec(dev, num_cols, M, K, ell_width, m, trace_ddr_id=None, trace_size=6
                 placement=shim_tile
             )
 
-        for col_idx in range(active_cols):
+        for col_idx in range(num_core_cols):
             shim_tile = Tile(col_idx, 0)
             rt.drain(
                 col_C_fifos[col_idx].cons(),
@@ -290,7 +317,8 @@ def main():
     argparser.add_argument("-K", type=int, default=10000)
     argparser.add_argument("-ell_width", type=int, default=64)
     argparser.add_argument("-m", type=int, default=32)
-    argparser.add_argument("--cols", type=int, default=4)
+    argparser.add_argument("--rows", type=int, default=4)
+    argparser.add_argument("--cols", type=int, default=8)
     argparser.add_argument(
         "--output-file-path",
         "-o",
@@ -300,7 +328,15 @@ def main():
     )
     args = argparser.parse_args()
     
-    module = my_matvec(args.dev, args.cols, args.M, args.K, args.ell_width, args.m)
+    module = my_matvec(
+        args.dev, 
+        args.M, 
+        args.K, 
+        args.ell_width, 
+        args.m, 
+        args.rows,
+        args.cols,
+    )
 
     output_file_path = Path(args.output_file_path)
     with open(output_file_path, "w") as f:
