@@ -13,8 +13,10 @@ import time
 USE_RANDOM = True
 
 OUTPUT_DIR = "npu_data"
-BLOCK_ALIGNMENT = 32    # ブロック数のアライメント単位 (例: 128ブロック単位で切り上げ)
-ELL_WIDTH_ALIGNMENT = 1  # ELL幅のアライメント単位 (例: 1ならアライメントなし、4なら4の倍数)
+
+#SELL形式のアライメント設定
+SELL_BLOCK_ALIGNMENT = 32    # ブロック数のアライメント単位 (例: 128ブロック単位で切り上げ)
+SELL_WIDTH_ALIGNMENT = 1  # ELL幅のアライメント単位 (例: 1ならアライメントなし、4なら4の倍数)
 
 # [Mode A] Random
 RAND_M = 5120
@@ -52,18 +54,18 @@ def pack_for_xdna_sell32(ell_data, ell_indices):
     combined = np.stack((indices_transposed, vals_bf16), axis=2)
     return combined.reshape(-1)
 
-def calc_padded_rows(target_rows, block_alignment):
+def calc_padded_rows(target_rows, SELL_BLOCK_ALIGNMENT):
     SELL_ROW_SIZE = 32
     min_blocks = (target_rows + SELL_ROW_SIZE - 1) // SELL_ROW_SIZE
     
     if min_blocks == 0 and target_rows > 0:
         min_blocks = 1
 
-    if min_blocks % block_alignment == 0:
+    if min_blocks % SELL_BLOCK_ALIGNMENT == 0:
         final_blocks = min_blocks
-        if final_blocks == 0: final_blocks = block_alignment
+        if final_blocks == 0: final_blocks = SELL_BLOCK_ALIGNMENT
     else:
-        final_blocks = ((min_blocks // block_alignment) + 1) * block_alignment
+        final_blocks = ((min_blocks // SELL_BLOCK_ALIGNMENT) + 1) * SELL_BLOCK_ALIGNMENT
         
     return final_blocks * SELL_ROW_SIZE, final_blocks
 
@@ -75,7 +77,7 @@ def get_random_ell_matrix(output_root_dir):
     name_prefix = f"random_M{RAND_M}_K{RAND_K}"
     print(f"--- [Random Mode] Generating {name_prefix}, ELL={RAND_ELL_WIDTH} ---")
     
-    padded_rows, total_blocks = calc_padded_rows(RAND_M, BLOCK_ALIGNMENT)
+    padded_rows, total_blocks = calc_padded_rows(RAND_M, SELL_BLOCK_ALIGNMENT)
     seed = int(time.time())
     np.random.seed(seed)
     ell_data = np.random.rand(padded_rows, RAND_ELL_WIDTH).astype(np.float32)
@@ -122,14 +124,14 @@ def get_downloaded_ell_matrix(output_dir):
     M, K = csr.shape
     actual_nnz = csr.nnz  # 実際の非ゼロ数
     
-    padded_rows, total_blocks = calc_padded_rows(M, BLOCK_ALIGNMENT)
+    padded_rows, total_blocks = calc_padded_rows(M, SELL_BLOCK_ALIGNMENT)
     
     row_nnz = np.diff(csr.indptr)
     max_nnz = row_nnz.max() if M > 0 else 0
     
     ell_width_aligned = int(max_nnz)
-    if ell_width_aligned % ELL_WIDTH_ALIGNMENT != 0:
-        ell_width_aligned = ((ell_width_aligned // ELL_WIDTH_ALIGNMENT) + 1) * ELL_WIDTH_ALIGNMENT
+    if ell_width_aligned % SELL_WIDTH_ALIGNMENT != 0:
+        ell_width_aligned = ((ell_width_aligned // SELL_WIDTH_ALIGNMENT) + 1) * SELL_WIDTH_ALIGNMENT
         
     ell_data = np.zeros((padded_rows, ell_width_aligned), dtype=np.float32)
     ell_indices = np.zeros((padded_rows, ell_width_aligned), dtype=np.int32)
@@ -214,8 +216,8 @@ def main():
             "block_size": 32,
             # アライメント制約の説明をわかりやすく変更
             "alignment_constraints": {
-                "block_count_must_be_multiple_of": int(BLOCK_ALIGNMENT),
-                "ell_width_must_be_multiple_of": int(ELL_WIDTH_ALIGNMENT)
+                "block_count_must_be_multiple_of": int(SELL_BLOCK_ALIGNMENT),
+                "ell_width_must_be_multiple_of": int(SELL_WIDTH_ALIGNMENT)
             }
         },
         "buffer_stats": {

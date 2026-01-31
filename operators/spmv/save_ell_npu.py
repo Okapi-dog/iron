@@ -14,8 +14,8 @@ USE_RANDOM = True   # ★ここをTrueにしてテストしてください
 OUTPUT_DIR = "npu_data"
 
 # ELL形式のアライメント設定
-COL_ALIGNMENT = 32     # ELLの幅(width)をこの倍数に合わせる
-ROW_ALIGNMENT = 128   # 行数(rows)をこの倍数に合わせる
+ELL_WIDTH_ALIGNMENT = 32     # ELLの幅(width)をこの倍数に合わせる
+ELL_ROW_ALIGNMENT = 128   # 行数(rows)をこの倍数に合わせる
 
 # [Mode A] Random Settings
 RAND_M = 368640
@@ -79,7 +79,7 @@ def get_random_ell_matrix(output_root_dir):
     print(f"--- [Random Mode] Generating {name}, ELL_Target={RAND_ELL_WIDTH} ---")
     
     max_nnz = RAND_ELL_WIDTH
-    n_rows_padded, aligned_width = calc_alignment_shape(RAND_M, max_nnz, ROW_ALIGNMENT, COL_ALIGNMENT)
+    n_rows_padded, aligned_width = calc_alignment_shape(RAND_M, max_nnz, ELL_ROW_ALIGNMENT, ELL_WIDTH_ALIGNMENT)
     
     print(f"Rows: {RAND_M} -> Padded: {n_rows_padded}, Width: {max_nnz} -> Aligned: {aligned_width}")
 
@@ -156,9 +156,9 @@ def get_downloaded_ell_matrix(output_dir):
     row_nnz = np.diff(csr.indptr)
     max_nnz = int(row_nnz.max()) if n_rows_orig > 0 else 0
     
-    n_rows_padded, aligned_width = calc_alignment_shape(n_rows_orig, max_nnz, ROW_ALIGNMENT, COL_ALIGNMENT)
+    n_rows_padded, aligned_width = calc_alignment_shape(n_rows_orig, max_nnz, ELL_ROW_ALIGNMENT, ELL_WIDTH_ALIGNMENT)
     
-    print(f"Rows: {n_rows_orig} -> Padded: {n_rows_padded} (Alignment: {ROW_ALIGNMENT})")
+    print(f"Rows: {n_rows_orig} -> Padded: {n_rows_padded} (Alignment: {ELL_ROW_ALIGNMENT})")
     print(f"max_nnz: {max_nnz} -> Aligned Width: {aligned_width}")
     
     # 配列確保 & データ埋め込み
@@ -228,8 +228,8 @@ def main():
             "aligned_ell_width": int(aligned_width),
             "original_ell_width_max_nnz": int(max_nnz),
             "alignment_constraints": {
-                "rows_must_be_multiple_of": int(ROW_ALIGNMENT),
-                "ell_width_must_be_multiple_of": int(COL_ALIGNMENT)
+                "rows_must_be_multiple_of": int(ELL_ROW_ALIGNMENT),
+                "ell_width_must_be_multiple_of": int(ELL_WIDTH_ALIGNMENT)
             }
         },
         "buffer_stats": {

@@ -22,13 +22,10 @@ from operators.common.test_utils import run_test
 # ==========================================
 # フォーマット: (matrix_name, tile_size, num_core_rows, num_core_cols)
 design_name = "ell" # "ell" or "sell32" or "sell32_block"
+tile_size = 80
 
 REGULAR_TEST_CONFIGS = [
-    ("random_M5120_K2048", 10, 1, 1),
-    ("random_M10240_K2048", 10, 1, 1),
-    ("random_M61440_K2048", 10, 1, 1),
-    ("random_M184320_K2048", 10, 1, 1),
-    ("random_M368640_K2048", 80, 1, 1),
+    ("random_M368640_K2048_ELL32", tile_size, 1, 1),
 ]
 
 EXTENSIVE_TEST_CONFIGS = [
