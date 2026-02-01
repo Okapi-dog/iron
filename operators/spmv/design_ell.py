@@ -66,7 +66,7 @@ def my_matvec(dev, M, K, ell_width, m, num_core_rows, num_core_cols, trace_ddr_i
     func_type = "vectorized" if vectorized else "scalar"
     matvec = Kernel(
         f"sparse_matvec_{func_type}_{dtype_in_str}_{dtype_out_str}",
-        "mv.o",
+        "spmv.o",
         [np.int32, np.int32, np.int32, np.int32, L1_A_ty, L1_B_ty, L1_C_ty],
     )
 

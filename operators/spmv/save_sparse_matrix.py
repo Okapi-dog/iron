@@ -15,9 +15,9 @@ AUTO_PADDING = False        # True: 自動でPaddingして処理, False: アラ�
 OUTPUT_DIR = "npu_data"
 
 # --- Common Random Settings ---
-RAND_M = 368640             # 行数 (padding部分さえ気にすれば、いくらでも大きくできる)
-RAND_K = 2048               # 列数(L1cacheの容量的に大体25600行ぐらいが最大)
-RAND_NNZ_PER_ROW = 32       # Random生成時の1行あたりの非ゼロ要素数 (ELL Width相当)
+RAND_M = 28672            # 行数 (padding部分さえ気にすれば、いくらでも大きくできる)
+RAND_K = 8192               # 列数(L1cacheの容量的に大体25600行ぐらいが最大)
+RAND_NNZ_PER_ROW = 1024       # Random生成時の1行あたりの非ゼロ要素数 (ELL Width相当)
 
 # --- Download Settings ---
 SS_GROUP = "ML_Graph"

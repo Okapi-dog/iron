@@ -106,7 +106,7 @@ def run_test(
         # datasets[0]: Warmup1
         # datasets[1]: Warmup2
         # datasets[2]: Measurement
-        datasets = [data_generator() for _ in range(3)]
+        datasets = [data_generator(calc_c=False), data_generator(calc_c=False), data_generator(calc_c=True)]
 
         # ヘルパー: 書き込み関数
         def _write_data(inputs, outputs):

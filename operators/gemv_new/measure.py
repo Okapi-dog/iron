@@ -14,7 +14,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from operators.gemv.op import AIEGEMV
+from operators.gemv_new.op import AIEGEMV
 from operators.gemv.reference import generate_golden_reference
 from operators.common.test_utils import run_test
 
@@ -22,16 +22,6 @@ from operators.common.test_utils import run_test
 def generate_test_params(extensive=False):
     params = [
         (28672,8192,8,1),
-        (28672,8192, 14,1),
-        (9600, 2048, 1, 4),
-        (9600, 2048, 2, 4),
-        (9600, 2048, 4, 4),
-        (9600, 2048, 8, 4),
-        (9600, 2048, 12, 4),
-        (9600, 2048, 15, 4),
-        (38400, 2048, 8, 4),
-        (38400, 2048, 12, 4), 
-        (38400, 2048, 15, 4),
     ]
     names = [
         f"matrix_vector_mul_{M}x{K}_{tile_size}_{num_aie_columns}col"
@@ -144,20 +134,18 @@ def test_gemv(M, K, num_aie_columns, tile_size, aie_context):
         M=M,
         K=K,
         num_aie_columns=num_aie_columns,
-        tile_size=tile_size,
+        tile_size_input=tile_size,
+        tile_size_output=3584,
         context=aie_context,
-        trace_ddr_id=None,
-        trace_size=0,
     )
     
     operator_reset = AIEGEMV(
         M=M,
         K=K,
         num_aie_columns=num_aie_columns,
-        tile_size=2,  # 異なる構成にして命令キャッシュを変える
+        tile_size_input=1,  # 異なる構成にして命令キャッシュを変える
+        tile_size_output=2,
         context=aie_context,
-        trace_ddr_id=None,
-        trace_size=0,
     )
     np.random.seed(1104)
 

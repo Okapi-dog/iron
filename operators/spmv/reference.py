@@ -163,7 +163,7 @@ def run_sell32_ref_from_npy(npy_path, vector_b):
     
     return result_padded
 
-def generate_reference_from_mtx(npy_path, seed=42):
+def generate_reference_from_mtx(npy_path, calc_c=True, seed=42):
     """
     指定された npy_path と同じディレクトリにある .mtx を読み込み、
     Float32 (CSR) でリファレンス計算を行う。
@@ -228,7 +228,15 @@ def generate_reference_from_mtx(npy_path, seed=42):
     B = B_raw.to(torch.bfloat16).to(torch.float32)
     #print(run_simple_ref(matrix_name, B.numpy())[258:275])
     #print(run_sell32_ref_from_npy(npy_path, B)[258:275])
+    if not calc_c:
 
+        return {
+            "A": A,
+            "B": B,
+            "C": None,
+            "M": M,
+            "K": K
+        }
     # 3. 行列演算 A @ B -> C (全てFloat32で計算)
     # PyTorch CPUは Float32 の Sparse CSR matmul をサポートしています。
     start_time = time.perf_counter()

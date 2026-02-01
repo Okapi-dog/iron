@@ -23,6 +23,7 @@ from aie.utils.trace_events_enum import CoreEvent, MemEvent, ShimTileEvent, MemT
 
 
 def my_matvec(dev, num_cores, M, K, m, trace_ddr_id=None, trace_size=65536):
+    print(f"my_matvec called with dev={dev}, num_cores={num_cores}, M={M}, K={K}, m={m}")
     vectorized = True
     dtype_in = np.dtype[bfloat16]
     dtype_in_str = "bf16"

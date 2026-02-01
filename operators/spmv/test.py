@@ -21,11 +21,11 @@ from operators.common.test_utils import run_test
 # 1. テスト設定 (ここを編集してテストケースを追加・変更)
 # ==========================================
 # フォーマット: (matrix_name, tile_size, num_core_rows, num_core_cols)
-design_name = "ell" # "ell" or "sell32" or "sell32_block"
-tile_size = 80
+design_name = "sell32_block" # "ell" or "sell32" or "sell32_block"
+tile_size = 1
 
 REGULAR_TEST_CONFIGS = [
-    ("random_M368640_K2048_ELL32", tile_size, 1, 1),
+    ("random_M28672_K8192_ELL1024", tile_size, 1, 1),
 ]
 
 EXTENSIVE_TEST_CONFIGS = [
