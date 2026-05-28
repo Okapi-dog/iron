@@ -21,17 +21,12 @@ from operators.common.test_utils import run_test
 
 def generate_test_params(extensive=False):
     params = [
-        (28672,8192,8,1),
-        (28672,8192, 14,1),
-        (9600, 2048, 1, 4),
-        (9600, 2048, 2, 4),
-        (9600, 2048, 4, 4),
-        (9600, 2048, 8, 4),
-        (9600, 2048, 12, 4),
-        (9600, 2048, 15, 4),
-        (38400, 2048, 8, 4),
-        (38400, 2048, 12, 4), 
-        (38400, 2048, 15, 4),
+        (19200, 2048, 1, 4),
+        (19200, 2048, 2, 4),
+        (19200, 2048, 4, 4),
+        (19200, 2048, 8, 4),
+        (19200, 2048, 12, 4),
+        (19200, 2048, 15, 4),
     ]
     names = [
         f"matrix_vector_mul_{M}x{K}_{tile_size}_{num_aie_columns}col"
@@ -130,7 +125,7 @@ if not os.path.exists(RESULT_CSV):
 def test_gemv(M, K, num_aie_columns, tile_size, aie_context):
     print(f"\n--- [Testing] M={M}, K={K}, Cols={num_aie_columns}, Tile={tile_size} ---")
 
-    MEASURE_LOOPS = 10
+    MEASURE_LOOPS = 5
     
     # 統計用リスト
     latencies = []

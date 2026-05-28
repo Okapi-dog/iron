@@ -13,6 +13,7 @@ import os
 import csv
 import gc
 import time
+import math
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -20,6 +21,7 @@ from operators.spmv.op import AIESPMV
 from operators.gemv.op import AIEGEMV
 from operators.spmv.reference import generate_reference_from_mtx
 from operators.common.test_utils import run_test
+from operators.spmv.save_sparse_matrix import save
 
 # ==========================================
 # 1. テスト設定
@@ -27,76 +29,81 @@ from operators.common.test_utils import run_test
 design_name = "ell" # "ell" or "sell32" or "sell32_block"
 tile_size = 1 #ellの場合64ぐらい。sellは1必須。
 
+
+SRAM_LIMIT = 64 * 1024          #L1のサイズ64KB
+PROG_RESERVED = 2 * 1024        #プログラム領域予約2KB    
+DATA_LIMIT = SRAM_LIMIT - PROG_RESERVED     #データ領域制限62KB
+
 # 計測したい構成リスト(行列名, タイルサイズ, コア行数, コア列数)
-REGULAR_TEST_CONFIGS = [
-    ("random_M28672_K8192_ELL4096", 1, 1, 1),
-    ("random_M28672_K8192_ELL4096", 1, 1, 2),
-    ("random_M28672_K8192_ELL4096", 1, 1, 4),
-    ("random_M28672_K8192_ELL4096", 1, 1, 8),
-    ("random_M28672_K8192_ELL4096", 1, 2, 8),
-    ("random_M28672_K8192_ELL4096", 1, 4, 7),
-    ("random_M28672_K8192_ELL4096", 1, 4, 8),
-    
-    ("random_M28672_K8192_ELL2048", 2, 1, 1),
-    ("random_M28672_K8192_ELL2048", 2, 1, 2),
-    ("random_M28672_K8192_ELL2048", 2, 1, 4),
-    ("random_M28672_K8192_ELL2048", 2, 1, 8),
-    ("random_M28672_K8192_ELL2048", 2, 2, 8),
-    ("random_M28672_K8192_ELL2048", 2, 4, 7),
-    ("random_M28672_K8192_ELL2048", 2, 4, 8),
+REGULAR_TEST_CONFIGS =[]
+for M in [1024,2048,4096,8192,16384,28672,32768,65536,131072]:
+    for K in [256, 512,1024,2048,4096,8192,16384,32768,65536,131072]:
+        if M*K >32768*32768:# メモリ制限回避
+            continue 
+        # --- 1. メモリ制限に基づく最大 tile_size の計算 ---
+        
+        # Xベクトル (Kx1, bf16) は固定で乗る
+        mem_x = K * 2
+        
+        # Xだけでメモリ不足ならスキップ
+        if mem_x >= DATA_LIMIT:
+            continue
+            
+        remaining_mem = DATA_LIMIT - mem_x
+        ell_width = K // 8
+        
+        # 1行あたりの消費メモリ: A(double buffer) + Y
+        # A: (width * 4bytes) * 2(buffer)
+        # Y: 2bytes
+        cost_per_row = (4 * ell_width * 2) + 2
+        
+        # メモリ的に許容される最大の行数
+        max_possible_tile = remaining_mem // cost_per_row
+        
+        if max_possible_tile < 1:
+            continue
 
-    ("random_M28672_K8192_ELL1024", 4, 1, 1),
-    ("random_M28672_K8192_ELL1024", 4, 1, 2),
-    ("random_M28672_K8192_ELL1024", 4, 1, 4),
-    ("random_M28672_K8192_ELL1024", 4, 1, 8),
-    ("random_M28672_K8192_ELL1024", 4, 2, 8),
-    ("random_M28672_K8192_ELL1024", 4, 4, 7),
-    ("random_M28672_K8192_ELL1024", 4, 4, 8),
-
-    ("random_M28672_K8192_ELL512", 8, 1, 1),
-    ("random_M28672_K8192_ELL512", 8, 1, 2),
-    ("random_M28672_K8192_ELL512", 8, 1, 4),
-    ("random_M28672_K8192_ELL512", 8, 1, 8),
-    ("random_M28672_K8192_ELL512", 8, 2, 8),
-    ("random_M28672_K8192_ELL512", 8, 4, 7),
-    ("random_M28672_K8192_ELL512", 8, 4, 8),
-
-    ("random_M28672_K8192_ELL256", 16, 1, 1),
-    ("random_M28672_K8192_ELL256", 16, 1, 2),
-    ("random_M28672_K8192_ELL256", 16, 1, 4),
-    ("random_M28672_K8192_ELL256", 16, 1, 8),
-    ("random_M28672_K8192_ELL256", 16, 2, 8),
-    ("random_M28672_K8192_ELL256", 16, 4, 7),
-    ("random_M28672_K8192_ELL256", 16, 4, 8),
-
-    ("random_M28672_K8192_ELL128", 32, 1, 1),
-    ("random_M28672_K8192_ELL128", 32, 1, 2),
-    ("random_M28672_K8192_ELL128", 32, 1, 4),
-    ("random_M28672_K8192_ELL128", 32, 1, 8),
-    ("random_M28672_K8192_ELL128", 32, 2, 8),
-    ("random_M28672_K8192_ELL128", 32, 4, 7),
-    ("random_M28672_K8192_ELL128", 32, 4, 8),
-
-    ("random_M28672_K8192_ELL64", 64, 1, 1),
-    ("random_M28672_K8192_ELL64", 64, 1, 2),
-    ("random_M28672_K8192_ELL64", 64, 1, 4),
-    ("random_M28672_K8192_ELL64", 64, 1, 8),
-    ("random_M28672_K8192_ELL64", 64, 2, 8),
-    ("random_M28672_K8192_ELL64", 64, 4, 7),
-    ("random_M28672_K8192_ELL64", 64, 4, 8),
-
-    ("random_M28672_K8192_ELL32", 128, 1, 1),
-    ("random_M28672_K8192_ELL32", 128, 1, 2),
-    ("random_M28672_K8192_ELL32", 128, 1, 4),
-    ("random_M28672_K8192_ELL32", 128, 1, 8),
-    ("random_M28672_K8192_ELL32", 128, 2, 8),
-    ("random_M28672_K8192_ELL32", 128, 4, 7),
-    ("random_M28672_K8192_ELL32", 128, 4, 8),
+        # --- 2. 制約 "M / tile_size / 32 が整数" を満たす tile_size の決定 ---
+        
+        # 式変形: tile_size = M / (32 * n)
+        # 条件: tile_size <= max_possible_tile
+        # よって: M / (32 * n) <= max_possible_tile
+        #       n >= M / (32 * max_possible_tile)
+        
+        # 探索開始する最小の n を計算
+        min_n = math.ceil(M / (32 * max_possible_tile))
+        
+        final_tile_size = 0
+        
+        # min_n から順に探索し、最初に割り切れる n を採用（＝最大のtile_size）
+        # Mは最大でも131072程度なのでループ回数は知れている
+        for n in range(min_n, M + 1):
+            denominator = 32 * n
+            
+            # 割り切れるか確認 (M / tile_size / 32 が整数になるか)
+            if M % denominator == 0:
+                candidate_tile = M // denominator
+                
+                # 念のためメモリ制限チェック（min_nの計算上、基本は満たすはず）
+                if candidate_tile <= max_possible_tile:
+                    final_tile_size = candidate_tile
+                    break
+        
+        if final_tile_size < 1:
+            continue
+        ell_width = K // 8
+        matrix_name = f"random_M{M}_K{K}_ELL{ell_width}"
+        REGULAR_TEST_CONFIGS.append((matrix_name, final_tile_size, 4, 8))
+        save(
+            output_dir="./npu_data",
+            auto_padding=False,
+            use_random=True,
+            rand_m=M,
+            rand_k=K,
+            rand_nnz=ell_width,
+        )
 
 
-
-
-]
 
 RESULT_CSV = "spmv_results.csv"
 
@@ -284,6 +291,9 @@ def test_measure_spmv(matrix_name, npy_path, M, K, ell_width, tile_size, num_cor
 
         # 3. 本計測 (Warmup1 -> Warmup2 -> Measure)
         # measure_mode=True を指定して stats を受け取る
+
+        gc.collect()
+        gc.disable()
         errors, latency_us, bandwidth_gbps, run_stats = run_test(
             operator, 
             init_in, 
@@ -294,6 +304,7 @@ def test_measure_spmv(matrix_name, npy_path, M, K, ell_width, tile_size, num_cor
             measure_mode=True, 
             data_generator=data_generator
         )
+        gc.enable()
 
         # 4. 結果保存
         latencies.append(run_stats["latency"])
@@ -328,8 +339,7 @@ def test_measure_spmv(matrix_name, npy_path, M, K, ell_width, tile_size, num_cor
 
         # 6. 後片付け
         del run_stats
-        gc.collect()
-        time.sleep(3)
+        time.sleep(4)
 
     # === オペレータ破棄 ===
     del operator

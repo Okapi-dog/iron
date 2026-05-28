@@ -37,6 +37,9 @@ LINE_WIDTH_SOLID = 1.2
 LINE_WIDTH_DOTTED = 1.0
 BLOCK_LINE_WIDTH = 3.5  # 太く強調
 
+# fontsize
+FONT_SIZE =18
+
 # ==========================================
 # 2. データ生成
 # ==========================================
@@ -96,13 +99,13 @@ def draw_base_grid(ax, rows, cols, color_map, title, h_block=None, w_block=None)
         for x in range(w_block, cols, w_block):
             ax.axvline(x, color='black', linestyle='-', linewidth=BLOCK_LINE_WIDTH)
 
-    ax.set_title(title, fontsize=11, pad=12)
+    ax.set_title(title, fontsize=FONT_SIZE, pad=12)
     
     if cols == ELL_WIDTH:
-        ax.set_xlabel("ELLPACK Columns", fontsize=10)
+        ax.set_xlabel("ELLPACK Columns", fontsize=FONT_SIZE)
     else:
-        ax.set_xlabel("Matrix Columns", fontsize=10)
-    ax.set_ylabel("Matrix Rows", fontsize=10)
+        ax.set_xlabel("Matrix Columns", fontsize=FONT_SIZE)
+    ax.set_ylabel("Matrix Rows", fontsize=FONT_SIZE)
     ax.set_xticks([])
     ax.set_yticks([])
 
@@ -182,7 +185,9 @@ def plot_npu_tiled_arrows(ax):
 # ==========================================
 # 5. プロット実行
 # ==========================================
-fig, axes = plt.subplots(1, 3, figsize=(18, 8))
+fig, axes = plt.subplots(1, 3, figsize=(14, 8), 
+                         gridspec_kw={'width_ratios': [COLS, ELL_WIDTH, ELL_WIDTH]},
+                         constrained_layout=True)
 
 # (a) Dense Matrix
 draw_base_grid(axes[0], ROWS, COLS, dense_map, 
@@ -211,8 +216,7 @@ legend_elements = [
     patches.Patch(facecolor=C_NZ,    edgecolor=C_GRID, label='非ゼロ要素'),
     patches.Patch(facecolor=C_MARK,  edgecolor=C_GRID, label='各行で左から2番目の非ゼロ要素 (目印)')
 ]
-fig.legend(handles=legend_elements, loc='lower center', ncol=3, frameon=False, fontsize=12)
+fig.legend(handles=legend_elements, loc='outside lower center', ncol=3, frameon=False, fontsize=FONT_SIZE,borderaxespad=-0.5)
 
-plt.tight_layout(rect=[0, 0.05, 1, 1]) 
 plt.show()
-plt.savefig("spmv_formats_fig.png", dpi=300)
+plt.savefig("spmv_formats_fig.png", dpi=300, pad_inches=0.1)

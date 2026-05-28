@@ -15,9 +15,9 @@ AUTO_PADDING = False        # True: 自動でPaddingして処理, False: アラ�
 OUTPUT_DIR = "npu_data"
 
 # --- Common Random Settings ---
-RAND_M = 28672            # 行数 (padding部分さえ気にすれば、いくらでも大きくできる)
+RAND_M = 573440            # 行数 (padding部分さえ気にすれば、いくらでも大きくできる)
 RAND_K = 8192               # 列数(L1cacheの容量的に大体25600行ぐらいが最大)
-RAND_NNZ_PER_ROW = 1024       # Random生成時の1行あたりの非ゼロ要素数 (ELL Width相当)
+RAND_NNZ_PER_ROW = 512       # Random生成時の1行あたりの非ゼロ要素数 (ELL Width相当)
 
 # --- Download Settings ---
 SS_GROUP = "ML_Graph"
@@ -361,6 +361,65 @@ def main():
     
     print("\n[All Done]")
     print(f"Results saved in: {save_dir}")
+
+def save(
+    output_dir=OUTPUT_DIR,
+    auto_padding=AUTO_PADDING,
+    use_random=USE_RANDOM,
+    # Random params
+    rand_m=RAND_M,
+    rand_k=RAND_K,
+    rand_nnz=RAND_NNZ_PER_ROW,
+    # Download params
+    ss_group=SS_GROUP,
+    ss_name=SS_NAME
+):
+    """
+    他のPythonスクリプトから呼び出すための関数。
+    引数で設定を上書きし、処理を実行する。
+    """
+    # 内部関数がグローバル変数を参照しているため、ここで上書きする
+    # (既存コードを極力いじらないための処置)
+    global OUTPUT_DIR, AUTO_PADDING, USE_RANDOM
+    global RAND_M, RAND_K, RAND_NNZ_PER_ROW
+    global SS_GROUP, SS_NAME
+
+    OUTPUT_DIR = output_dir
+    AUTO_PADDING = auto_padding
+    USE_RANDOM = use_random
+    RAND_M = rand_m
+    RAND_K = rand_k
+    RAND_NNZ_PER_ROW = rand_nnz
+    SS_GROUP = ss_group
+    SS_NAME = ss_name
+
+    print(f"--- Starting Process ---")
+    print(f"Mode: {'Random' if USE_RANDOM else 'Download'}")
+    if USE_RANDOM:
+        print(f"Params: M={RAND_M}, K={RAND_K}, NNZ={RAND_NNZ_PER_ROW}")
+    else:
+        print(f"Params: {SS_GROUP}/{SS_NAME}")
+
+    # --- 実際の処理フロー ---
+
+    if USE_RANDOM:
+        name_prefix = f"random_M{RAND_M}_K{RAND_K}_ELL{RAND_NNZ_PER_ROW}"
+        if os.path.exists(os.path.join(OUTPUT_DIR, name_prefix)):
+            print(f"[Warning] Output directory for random matrix already exists. Skipping generation.")
+            return os.path.join(OUTPUT_DIR, name_prefix)
+            
+    
+    # 1. データソース取得
+    csr_matrix, base_name, save_dir = generate_source_csr(OUTPUT_DIR)
+    
+    # 2. SELL-32形式の生成
+    run_sell32_flow(csr_matrix, base_name, save_dir)
+    
+    # 3. ELL形式の生成
+    run_ell_flow(csr_matrix, base_name, save_dir)
+    
+    print("\n[All Done]")
+    return save_dir  # 保存先パスを返すと呼び出し元で使いやすい
 
 if __name__ == "__main__":
     main()

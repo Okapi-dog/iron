@@ -21,11 +21,11 @@ from operators.common.test_utils import run_test
 # 1. テスト設定 (ここを編集してテストケースを追加・変更)
 # ==========================================
 # フォーマット: (matrix_name, tile_size, num_core_rows, num_core_cols)
-design_name = "sell32_block" # "ell" or "sell32" or "sell32_block"
-tile_size = 1
+design_name = "ell" # "ell" or "sell32" or "sell32_block"
+tile_size = 2
 
 REGULAR_TEST_CONFIGS = [
-    ("random_M28672_K8192_ELL1024", tile_size, 1, 1),
+    ("random_M1024_K2048_ELL256", tile_size, 4, 8),
 ]
 
 EXTENSIVE_TEST_CONFIGS = [
@@ -237,7 +237,7 @@ def test_spmv(npy_path, M, K, ell_width, tile_size, num_core_rows, num_core_cols
         num_core_cols=num_core_cols,
         design_name=design_name,
         context=aie_context,
-        trace_ddr_id=None,#3
+        trace_ddr_id=3,#3
         trace_size=8192*4,
     )
     golden_ref = generate_reference_from_mtx(npy_path=npy_path)

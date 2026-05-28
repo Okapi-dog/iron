@@ -246,6 +246,54 @@ void sell32_spmv_kernel_32_block(
     
     event1();
 }
+template <uint32_t r>
+void sell32_mac_only_benchmark(
+    uint32_t loop_count,
+    const bfloat16 *__restrict data_ptr, 
+    bfloat16 *__restrict vec_y          
+)
+{
+    ::aie::set_rounding(aie::rounding_mode::conv_even);
+
+    // ポインタのセットアップ
+    const bfloat16 *__restrict ptr_idx_as_bf16 = reinterpret_cast<const bfloat16*>(data_ptr);
+    const bfloat16 *__restrict ptr_val = data_ptr + r; 
+
+    // レジスタへのロード（ループ外）
+    aie::vector<bfloat16, r> idx_reg = aie::load_v<r>(ptr_idx_as_bf16);
+    aie::vector<bfloat16, r> val_reg = aie::load_v<r>(ptr_val);
+
+    // [重要] アキュムレータを4つ用意して独立させる
+    // これにより、acc0の計算が終わるのを待たずにacc1の計算を開始できる
+    aie::accum<accfloat, r> acc0 = aie::zeros<accfloat, r>();
+    aie::accum<accfloat, r> acc1 = aie::zeros<accfloat, r>();
+    aie::accum<accfloat, r> acc2 = aie::zeros<accfloat, r>();
+    aie::accum<accfloat, r> acc3 = aie::zeros<accfloat, r>();
+
+    event0(); 
+
+    AIE_PREPARE_FOR_PIPELINING
+    // 4回分を1セットで回すので、ループ回数は1/4になる（またはk+=4にする）
+    // loop_countは4の倍数であることを推奨
+    for (uint32_t k = 0; k < loop_count; k += 4) {
+        // 依存関係のない4つの命令を並べる
+        acc0 = aie::mac(acc0, val_reg, idx_reg);
+        acc1 = aie::mac(acc1, val_reg, idx_reg);
+        acc2 = aie::mac(acc2, val_reg, idx_reg);
+        acc3 = aie::mac(acc3, val_reg, idx_reg);
+    }
+
+    event1();
+
+    // [重要] 最後に4つの結果を合算する
+    // これをしないと、コンパイラが「acc1~3は不要」と判断して消してしまう可能性がある
+    acc0 = aie::add(acc0, acc1);
+    acc0 = aie::add(acc0, acc2);
+    acc0 = aie::add(acc0, acc3);
+
+    aie::vector<bfloat16, r> res = acc0.template to_vector<bfloat16>();
+    aie::store_v(vec_y, res);
+}
 
 
 extern "C" { 
@@ -283,6 +331,7 @@ void sell32_block_spmv_vectorized_bf16_bf16(
 )
 {
     sell32_spmv_kernel_32_block(ell_width, reset, data_ptr, vec_x, vec_y);
+    //sell32_mac_only_benchmark<256>(ell_width, data_ptr, vec_y);
 }
 
 } // extern "C"
