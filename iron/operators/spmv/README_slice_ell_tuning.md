@@ -618,6 +618,20 @@ latency比較と、必要時の生成命令確認を次に行う。
 | 1 | 143.1 µs | 7.44 GB/s | 256 slots/row, 一A object/slice |
 | 2 | 148.1 µs | 14.21 GB/s | 512 slots/row, 二A objectを一call内でFP32加算 |
 
+短いsmoke shapeの固定costを除いた比較として、Phase 1と同じ`M=4096, K=4096, ELL width=512`、
+すなわち`p=2`のuniform CSRを、同じ測定規約（warmup 2回、5 sample、sample間4秒、
+`result.npu_time`のみでBO同期を除外）で測定した。
+
+| kernel / format | mean | min | max | std. dev. | effective BW | 結果 |
+|---|---:|---:|---:|---:|---:|---|
+| Phase 1 ELL（固定width 512） | 277.71 µs | 250.87 µs | 295.47 µs | 14.95 µs | 30.266 GB/s | PASS（既存baseline） |
+| Phase 3 static Slice-ELL A案（`p=2`, 512 slots/row） | 287.46 µs | 278.98 µs | 293.91 µs | 5.03 µs | 29.239 GB/s | PASS |
+
+両者は同じ`M,K,width`とpayload accountingで比較できる。入力random seedは同一ではないため、
+この差（約3.5%）だけからmicrokernelの優劣は結論付けない。ただし、Phase 3の横32-lane kernel、
+`[slice][block][core][row]` A split、4-core join/drainが、全32 coreの通常サイズで約30 GB/sに
+到達することは確認できた。
+
 ### Phase 4: dynamic `blocks_per_slice[s]` を四 core micro-test で検証する
 
 1. `blocks_per_slice=[0,1,4,2]` のように全ゼロ slice と異なる長さを混在させる小さな matrix を使う。
