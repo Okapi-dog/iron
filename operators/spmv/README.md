@@ -415,28 +415,36 @@ ELLとSELL-32 blockのそれぞれのlayoutへpackし、4 core-row × 8 core-col
 使う。
 
 各行はdesignごと・shapeごとに新しいempty build directoryからcompileした。そのため、
-`op.py`の成果物名が`design_name`を含まない既知のcache collisionは起きない。`compile` は
-MLIR生成、AIE kernel compile、`aiecc.py` によるxclbin生成を含む。`prepare` はXRT runtime準備、
-`latency` はwarm-up 2回後のrunlist一回である。全ケースはCPU referenceと
-`rel_tol=0.04`、`abs_tol=1e-4`で全要素一致した。latencyは単発値であり、最終的な統計的性能比較値
-ではない。
+`op.py`の成果物名が`design_name`を含まない既知のcache collisionは起きない。
 
-| `M × K` | ELL width | kernel | `m` | compile | prepare | latency | effective BW | 結果 |
-|---|---:|---|---:|---:|---:|---:|---:|---|
-| `4096 × 4096` | 512 | ELL | 8 | 6.205 s | 0.178 s | 589.9 us | 14.247 GB/s | PASS |
-| `4096 × 4096` | 512 | SELL-32 block | 1 | 7.622 s | 0.178 s | 392.3 us | 21.427 GB/s | PASS |
-| `4096 × 11008` | 1376 | ELL | 2 | 5.491 s | 0.044 s | 881.9 us | 25.598 GB/s | PASS |
-| `4096 × 11008` | 1376 | SELL-32 block | 1 | 6.035 s | 0.169 s | 1139.7 us | 19.807 GB/s | PASS |
-| `28672 × 8192` | 1024 | ELL | 4 | 5.526 s | 0.052 s | 4115.7 us | 28.553 GB/s | PASS |
-| `28672 × 8192` | 1024 | SELL-32 block | 1 | 5.809 s | 0.055 s | 4120.6 us | 28.519 GB/s | PASS |
+性能値は **`measure.py` と同一の方法**で5回採取した。各sampleでは入力をdeviceへ書いた後、
+1回目を初期化、2回目をwarm-up、3回目の`run_runlist()`戻り値を測定値とする。この戻り値は
+`xrt_runlist.execute()`から`wait()`まで、すなわちdevice executionのみであり、host側のBO同期
+（host→NPU DMA）を含まない。sample間には1024要素GEMVを実行して4秒待機した。全ケースは
+CPU referenceと`rel_tol=0.04`、`abs_tol=1e-4`で全要素一致した。
 
-この限定したuniform ELL inputでは、4096×4096はSELL-32 block、4096×11008はELLが速く、
-28672×8192はほぼ同速だった。この差だけからformat一般の優劣を結論付けない。実modelの
-unstructured pruning後の不均一な行長、またはSlice-ELLの結果とは別に扱う。
+| `M × K` | ELL width | kernel | `m` | mean | min | max | std. dev. | effective BW | 結果 |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---|
+| `4096 × 4096` | 512 | ELL | 8 | 265.13 us | 254.74 us | 270.36 us | 5.49 us | 31.702 GB/s | PASS |
+| `4096 × 4096` | 512 | SELL-32 block | 1 | 261.96 us | 256.28 us | 269.46 us | 4.43 us | 32.085 GB/s | PASS |
+| `4096 × 11008` | 1376 | ELL | 2 | 517.97 us | 510.97 us | 523.97 us | 4.45 us | 43.583 GB/s | PASS |
+| `4096 × 11008` | 1376 | SELL-32 block | 1 | 520.63 us | 500.48 us | 529.08 us | 10.38 us | 43.360 GB/s | PASS |
+| `28672 × 8192` | 1024 | ELL | 4 | 2207.14 us | 2203.54 us | 2217.13 us | 5.09 us | 53.243 GB/s | PASS |
+| `28672 × 8192` | 1024 | SELL-32 block | 1 | 2182.89 us | 2175.14 us | 2190.12 us | 6.19 us | 53.834 GB/s | PASS |
+
+したがって、過去の`measure.py`の`random_M28672_K8192_ELL1024`（約2161--2179 us）と
+今回のELL 2207.14 usは同じ定義であり、差は約1--2%である。一方、以前ここに記録した
+4115.7 usは、外側で時刻を取ったため約117 MiBの入力BO同期を含むhost-inclusive値だった。
+これはend-to-end診断には使えるが、`measure.py`の性能値や上表との比較には使わない。
+
+この限定したuniform ELL inputでは、4096×4096はSELL-32 block、4096×11008はELL、
+28672×8192はSELL-32 blockがわずかに速い。この差だけからformat一般の優劣を結論付けない。
+実modelのunstructured pruning後の不均一な行長、またはSlice-ELLの結果とは別に扱う。
 
 traceはユーザ判断によりこのPhase 0の要件から外す。DMA/FIFO traceは採取しない。
 
 再実行用runnerと今回のJSON・logは、gitignore対象の
-`npu_data/phase0_devel_2026-09-16/`へ`rerun_*`として保存する。xclbinとMLIRは各一時clean
-build directoryにのみ置き、いずれの生成物もcommitしない。commit前には
+`npu_data/phase0_devel_2026-09-16/`へ`measure_*`として保存する。`rerun_*`は上記の
+host-inclusive診断値であり、baselineには使わない。xclbinとMLIRは各一時clean build directoryに
+のみ置き、いずれの生成物もcommitしない。commit前には
 `git status --short --branch`が意図したREADME変更だけであることを確認する。

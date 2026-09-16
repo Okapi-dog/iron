@@ -432,7 +432,9 @@ operator sourceの測定開始commitは`fdcddda6c6de64f04831a423b8720f2ce1fd9561
 - 各shapeについてELLとSELL-32 blockを、4×8の全32 coreでCPU reference一致まで実行した。
   ELLの`m`は順に8、2、4、SELL-32 blockの`m`は実装上1である。
 - designごと・shapeごとにempty build directoryを用意し、`op.py`のdesign名なしartifact cacheが
-  結果を混ぜないようにした。結果JSON/logは`npu_data/phase0_devel_2026-09-16/rerun_*`に保存した。
+  結果を混ぜないようにした。性能値は`measure.py`と同じdevice-onlyの5 sample平均であり、
+  結果JSON/logは`npu_data/phase0_devel_2026-09-16/measure_*`に保存した。host→NPU BO同期を
+  含む`rerun_*`は診断用で、baselineの性能比較には使わない。
 - traceは本Phase 0の要件から外し、採取しない。
 
 ### Phase 1: 最新 toolchain への移行を先に完了する
