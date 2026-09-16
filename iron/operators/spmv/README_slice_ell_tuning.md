@@ -746,6 +746,13 @@ lock順序を壊し、deadlockまたはrow順破壊になる。
 
 #### 4.5 段階的な実装と確認項目
 
+最初に、C++ sourceをMLIRへ自動変換するのではなく、IRON Worker内からAIE vector operationをemitする
+最小の実現可能性確認を行った。`mlir_accumulator_probe.py`は32 BF16 laneのA objectを二つ、32 BF16 laneの
+x objectを一つ取得し、`vector<32xf32>`の`scf.for` loop-carried SSA valueへ二回の`aievec.mac_elem`を加算して
+FP32 objectへstoreする。これはNPU2でcompileおよび5回の数値一致を確認済みである。Worker、ObjectFIFO、
+Runtime、DMAは通常のIRONのままであり、C++ `.o`に置く代わりにMAC命令だけをWorker core MLIRに置いた。
+ただしこのprobeはindexed gather、8本のaccumulator、runtime `p`、register spillなしをまだ証明しない。
+
 1. **register-residency lowering probe:** `R=4, cols=1`、`B_h=32, C_h=8, B_w=256`、4 sliceの
    `p=[0,1,4,2]`を用意する。config wordをupper boundとする`scf.for`へ`A.acquire(1)/release(1)`と
    8本のloop-carried accumulatorを置き、`--dynamic-objFifos`でlowerする。generated MLIRにruntime

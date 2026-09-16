@@ -10,8 +10,25 @@ from iron.operators.spmv.reference import make_uniform_ell, reference_ell
 from iron.operators.spmv.op import SpMVSELL32
 from iron.operators.spmv.op import SpMVSELL32Block
 from iron.operators.spmv.op import SpMVSliceELLStatic
+from iron.operators.spmv.op import MLIRAccumulatorProbe
 from iron.operators.spmv.reference import make_uniform_sell32, reference_sell32, reference_sell32_block
 from iron.operators.spmv.slice_ell import SliceELLConfig, cpu_spmv_slice_ell, csr_to_slice_ell
+
+
+def test_mlir_accumulator_probe(aie_context):
+    """Confirm that a direct MLIR vector MAC carries FP32 state through an SCF loop."""
+    a = torch.rand(64, generator=torch.Generator().manual_seed(101)).to(torch.bfloat16)
+    x = torch.rand(32, generator=torch.Generator().manual_seed(102)).to(torch.bfloat16)
+    expected = a[:32].float() * x.float() + a[32:].float() * x.float()
+    errors, _, _ = run_test(
+        MLIRAccumulatorProbe(context=aie_context),
+        {"a": a, "x": x},
+        {"y": expected},
+        rel_tol=0.0,
+        abs_tol=0.0,
+        warmup_iters=1,
+    )
+    assert not errors, errors
 
 
 def test_static_ell_1024x2048(aie_context):

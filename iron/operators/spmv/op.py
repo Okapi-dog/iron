@@ -277,3 +277,34 @@ class SpMVSliceELLStatic(MLIROperator):
             ),
             vector,
         )
+
+
+@dataclass
+class MLIRAccumulatorProbe(MLIROperator):
+    """NPU proof for one loop-carried vector<32xf32> accumulator in an IRON Worker."""
+
+    context: object | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        super().__init__(context=self.context)
+
+    def get_mlir_artifact(self):
+        return PythonGeneratedMLIRArtifact(
+            f"{self.name}.mlir",
+            DesignGenerator(
+                self.operator_dir / "mlir_accumulator_probe.py",
+                "mlir_accumulator_probe",
+                (aie_utils.get_current_device(),),
+            ),
+        )
+
+    def get_kernel_artifacts(self):
+        # The MAC is emitted in the Worker core MLIR; there is no C++ .o file.
+        return []
+
+    def get_arg_spec(self):
+        return [
+            AIERuntimeArgSpec("in", (64,)),
+            AIERuntimeArgSpec("in", (32,)),
+            AIERuntimeArgSpec("out", (32,), dtype=np.dtype(np.float32)),
+        ]
