@@ -17,7 +17,6 @@ import time
 from pathlib import Path
 
 import aie.utils as aie_utils
-import numpy as np
 import torch
 
 from iron.common.test_utils import verify_buffer
@@ -75,40 +74,16 @@ def _run(operator, packed, vector, expected, samples=5, idle_s=4):
     }
 
 
-def _legacy_packed(root, M, K, width, layout):
-    """Load a Phase-0 packed payload, preserving its uint16 bit pattern."""
-    name = f"random_M{M}_K{K}_ELL{width}"
-    path = root / name / f"{name}_xdna_{layout}.npy"
-    words = np.load(path)
-    expected_words = M * width * 2
-    if words.dtype != np.uint16 or words.size != expected_words:
-        raise ValueError(
-            f"{path}: expected {expected_words} uint16 words, got {words.shape} {words.dtype}"
-        )
-    # Index words and BF16 value words share a uint16 storage representation.
-    # A copy makes the tensor writable for the XRT host buffer implementation.
-    return torch.from_numpy(words.copy()).view(torch.int16).view(torch.bfloat16)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument("--idle-s", type=float, default=4)
-    parser.add_argument(
-        "--legacy-data-root",
-        type=Path,
-        help="optional Phase-0 npu_data root; uses its exact ELL/SELL-32 payloads",
-    )
     args = parser.parse_args()
     results = []
     for case_idx, (M, K, width, rows_per_core) in enumerate(CASES):
         vector = torch.rand(K, generator=torch.Generator().manual_seed(42)).to(torch.bfloat16)
-        if args.legacy_data_root:
-            ell = _legacy_packed(args.legacy_data_root, M, K, width, "ell")
-            sell = _legacy_packed(args.legacy_data_root, M, K, width, "sell32")
-        else:
-            ell = make_uniform_ell(M, K, width, seed=1000 + case_idx)
-            sell = make_uniform_sell32(M, K, width, seed=1000 + case_idx)
+        ell = make_uniform_ell(M, K, width, seed=1000 + case_idx)
+        sell = make_uniform_sell32(M, K, width, seed=1000 + case_idx)
         plans = (
             ("ELL", SpMVELL(M, K, width, rows=4, cols=8, rows_per_core=rows_per_core), ell, reference_ell(ell, vector, M, width)),
             ("SELL-32 block", SpMVSELL32Block(M, K, width, rows=4, cols=8), sell, reference_sell32_block(sell, vector, M, width)),
@@ -120,8 +95,7 @@ def main():
             results.append(row)
     output = Path("npu_data/phase1_mlir_v1.4.3")
     output.mkdir(parents=True, exist_ok=True)
-    name = "full_core_legacy_input.json" if args.legacy_data_root else "full_core_device_only.json"
-    (output / name).write_text(json.dumps(results, indent=2) + "\n")
+    (output / "full_core_device_only.json").write_text(json.dumps(results, indent=2) + "\n")
 
 
 if __name__ == "__main__":
