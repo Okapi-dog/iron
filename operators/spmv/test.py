@@ -237,7 +237,7 @@ def test_spmv(npy_path, M, K, ell_width, tile_size, num_core_rows, num_core_cols
         num_core_cols=num_core_cols,
         design_name=design_name,
         context=aie_context,
-        trace_ddr_id=3,#3
+        trace_ddr_id=None,#3
         trace_size=8192*4,
     )
     golden_ref = generate_reference_from_mtx(npy_path=npy_path)
