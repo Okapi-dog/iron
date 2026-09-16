@@ -17,7 +17,7 @@ devel
   └─ spmv/mlir-v1.4.3
        Phase 1: 最新 IRON / mlir-aie への移植。ELL, sell32, sell32_block を再現
        └─ spmv/slice-ell
-            Phase 2--5: packer/reference, static Slice-ELL, dynamic slice_blocks, 実機評価
+            Phase 2--5: packer/reference, static Slice-ELL, dynamic blocks_per_slice, 実機評価
 ```
 
 `spmv/mlir-v1.4.3` には Slice-ELL を混ぜず、固定幅 ELL / SELL が最新環境で再現することを
@@ -59,8 +59,8 @@ SpMV は数式では `y = A x` と書く。出力を `C` と呼ばず `y` とす
 | `C_h` | 一 core が担当する行数。`C_h = B_h / R` | core L1 の A/y object 高さ |
 | `C_w` | 一 core が担当する横 slot 数。現設計では `C_w = B_w` | 横方向を core 間で分割しない |
 | `\ell_s` | slice `s` 内の最大実 nnz/row | その slice が必要とする実幅 |
-| `slice_blocks[s]` | slice `s` を横方向に処理する `B_h × B_w` block 数 | `x` と同じ config object に格納する可変値 |
-| `W_s` | slice `s` の `B_w` 丸め後の ELL 幅 | `W_s = slice_blocks[s] × B_w` |
+| `blocks_per_slice[s]` | slice `s` を横方向に処理する `B_h × B_w` block 数 | `x` と同じ config object に格納する可変値 |
+| `W_s` | slice `s` の `B_w` 丸め後の ELL 幅 | `W_s = blocks_per_slice[s] × B_w` |
 
 ここで `B` は **Block**、`C` は **Core** を表す。`B_h/B_w` と `C_h/C_w` は図でも
 そのまま縦横の対応として使える。`C_w` は今は `B_w` と同じであり、独立した tuning
@@ -69,12 +69,12 @@ parameter ではない。
 slice `s` について、必要な block 数と padded slot 数は次である。
 
 ```
-slice_blocks[s] = ceil(ell_s / B_w)       # 横方向の B_h × B_w block 数
-W_s             = slice_blocks[s] * B_w  # slice の丸め後 ELL 幅
+blocks_per_slice[s] = ceil(ell_s / B_w)       # 横方向の B_h × B_w block 数
+W_s                 = blocks_per_slice[s] * B_w  # slice の丸め後 ELL 幅
 slots(s)        = B_h * W_s               # value/index の padding 込み slot 数
 ```
 
-`R` 個の core は全員が同じ `slice_blocks[s]` 個の A block を消費する。ただし各 core
+`R` 個の core は全員が同じ `blocks_per_slice[s]` 個の A block を消費する。ただし各 core
 が扱うのは一 block 内の `C_h × C_w` slot だけである。短い row の余りには value=0 を
 入れる。各 core は最後に必ず `C_h` 行を出力するので、join 後の `y_s` object は常に
 固定の `B_h` 行となる。
@@ -82,7 +82,7 @@ slots(s)        = B_h * W_s               # value/index の padding 込み slot 
 つまり、**入力 A block 数だけは slice ごとに変わる**一方で、**出力 `y_s` は固定長かつ
 元の行順のまま**にできる。
 
-### `x + slice_blocks[]` config と固定回数の `y_s` release
+### `x + blocks_per_slice[]` config と固定回数の `y_s` release
 
 通常の ObjectFIFO object には、任意の利用者定義 `metadata.is_last` はありません。
 API に現れる `metadata` は Shim DMA allocation と ObjectFIFO を関連付ける名前です。
@@ -92,11 +92,11 @@ API に現れる `metadata` は Shim DMA allocation と ObjectFIFO を関連付�
 最初の実装では、A object ごとの `is_last` と独立した control FIFOは使わない。
 NPU2の各Shim tileにはhostからarrayへ送るMM2S DMA channelが2本しかなく、現行構成は既に
 packed Aと入力vector `x`で2本を使用するためである。代わりに、column `c` が担当する
-sliceの`slice_blocks[s]`列を`x`の末尾へ連結し、一つの固定長config objectとして四coreへ
+sliceの`blocks_per_slice[s]`列を`x`の末尾へ連結し、一つの固定長config objectとして四coreへ
 broadcastする。
 
 ```text
-config_c = [ BF16 x[0:K] | uint16 slice_blocks[s_begin[c]:s_end[c]] | alignment padding ]
+config_c = [ BF16 x[0:K] | uint16 blocks_per_slice[s_begin[c]:s_end[c]] | alignment padding ]
 ```
 
 各columnのconfig型を共通にするため、control部分は全column中の最大local slice数まで
@@ -104,10 +104,14 @@ paddingする。`x`のBF16 bit列とcontrolのuint16列を同じraw uint16 buffe
 先頭`K`要素をBF16としてreinterpretする。config objectは各coreがjobの最初に一回だけacquireし、
 全sliceが終わるまで保持する。これによりShimの入力はAとconfigの2本に収まる。
 
+実装の末尾zero paddingは現在64 byte境界にそろえるが、これは全columnで同じobject長にしてDMAへ
+渡しやすくするformat上の規約であり、計算データではない。64 byteが必須のhardware最小値とはまだ
+主張しない。Phase 3で生成DMAを確認し、必要ならこのalignment値を緩める。
+
 ```text
-config = acquire(x_and_slice_blocks) # jobごとに一回
+config = acquire(x_and_blocks_per_slice) # jobごとに一回
 for s in assigned_slices:
-  p = load_u16(config, K + local_s)  # p = slice_blocks[s]
+  p = load_u16(config, K + local_s)  # p = blocks_per_slice[s]
   y = acquire(C_h rows)
   clear(fp32_row_accumulator)
   for i = 0 .. p-1:                  # dynamic な A acquire/release 回数
@@ -130,13 +134,13 @@ block 数だけを slice ごとに可変にできる。
 古い静的/cyclostatic lowering を前提にしてはならないため、最初に小さい NPU2 design で
 dynamic A loop が lower・実行できることを確認します。
 
-`ell_s=0` の全ゼロsliceも仕様に含める。`slice_blocks[s]=0`ならAを一つもacquireせず、
+`ell_s=0` の全ゼロsliceも仕様に含める。`blocks_per_slice[s]=0`ならAを一つもacquireせず、
 zero clearしたaccumulatorをBF16化してyをreleaseする。LAST flag方式と違ってdummy A blockは
 不要である。
 
-4 core の join を維持する限り、同一 slice の四 core は同じ `slice_blocks[s]` 個の A block を
+4 core の join を維持する限り、同一 slice の四 core は同じ `blocks_per_slice[s]` 個の A block を
 消費し、全 core が y を release する必要がある。短い row の余りは padding する。
-core ごとに異なる `slice_blocks[s]` にして終了順で y を返す方式は、この固定順 join/drain の範囲外であり、
+core ごとに異なる `blocks_per_slice[s]` にして終了順で y を返す方式は、この固定順 join/drain の範囲外であり、
 PacketFifo と row-id 付き出力、または別の scatter/reorder 経路が必要になる。
 
 ### vector laneは行方向ではなく横slot方向に使う
@@ -233,7 +237,7 @@ Slice-ELL の数式だけでは packer と kernel を別々に実装できない
   AoS/SoA と alignment を含める。A は column ごとの一つの線形 stream とし、slice ごとの
   独立した Shim DMA task にはしない。
 - **config の layout**: raw uint16 buffer を
-  `[BF16 x の bit列 | local slice_blocks の uint16列 | 64-byte alignment padding]` とする。
+  `[BF16 x の bit列 | local blocks_per_slice の uint16列 | alignment padding]` とする。
   全columnで同じobject長になるようcontrol部分を最大local slice数までpaddingし、各columnの
   `slice_begin/slice_end`、有効control数、config byte数をmanifestに記録する。
 - **padding の有効性**: padding slot は `value=0` だけでは不十分である。kernel が
@@ -246,15 +250,15 @@ Slice-ELL の数式だけでは packer と kernel を別々に実装できない
   分配で割り切れない場合の zero-row padding、元の `M` 行だけを host に返す規則、各 Shim
   column が持つ連続 slice range を定める。y の drain offset はこの表から生成する。
 - **数値仕様**: slice の先頭で y をゼロ初期化する場所、accumulator の型、BF16 へ丸める
-  時点、CPU reference の許容誤差を定める。`slice_blocks[s]=0` ではゼロ y を確実に出力する。
+  時点、CPU reference の許容誤差を定める。`blocks_per_slice[s]=0` ではゼロ y を確実に出力する。
 - **artifact identity**: xclbin/MLIR/packed data の名前と manifest に、少なくとも
   `M,K,R,B_h,B_w,C_h,C_w,format version,index type,toolchain commit` を含める。異なる design の古い
   artifact を再利用しない。
 
-`slice_blocks` の制御列は slice 数 `N_slice=ceil(M/B_h)` 個であり、A 本体の
-`sum_s slice_blocks[s]` block に比べて小さい。offline packer は各 matrix の
-`packed_A`, `slice_blocks`, `manifest.json` を一組として生成・検証する。x は実行時入力なので、
-host runtime が各 invocation で x とそのcolumnの `slice_blocks` を一つの `packed_config`
+`blocks_per_slice` の制御列は slice 数 `N_slice=ceil(M/B_h)` 個であり、A 本体の
+`sum_s blocks_per_slice[s]` block に比べて小さい。offline packer は各 matrix の
+in-memory `packed_a`, `blocks_per_slice`, `manifest.json` を一組として生成・検証する。x は実行時入力なので、
+host runtime が各 invocation で x とそのcolumnの `blocks_per_slice` を一つの `runtime_config`
 へ詰める。静的なpacked weightへ特定のxを埋め込んではならない。
 
 ## 4. 現在の `design_sell32_block.py` がしていること
@@ -274,7 +278,7 @@ MemTile で join され、その連続 row range を一つの y TAP で DDR に 
 したがって各 row は一つの core だけが計算しており、出力 reduction は不要です。
 
 Slice-ELL に移行しても、この y の所有権を維持します。slice の A block
-`slice_blocks[s]` 個を連続 pack して四 core に送り、固定長の `B_h` 出力を join/drain します。
+`blocks_per_slice[s]` 個を連続 pack して四 core に送り、固定長の `B_h` 出力を join/drain します。
 core が終了した順に任意の y を出力する方式は使いません。Shim DMA の drain は
 順次出力であり、任意位置の DDR scatter writer ではないためです。
 
@@ -348,7 +352,7 @@ element size による換算も入ります。したがって「BF16 の 1024 �
 - d3 iteration count が 65 を超える場合。
 - 空き次元がなく、順序を壊さずには分割できない prime な inner 次元が 1023 を超える場合。
 - 4 次元を超える logical TAP。
-- Slice-ELL kernel がconfigから読んだ `slice_blocks[s]` 回だけA ObjectFIFOを正しく
+- Slice-ELL kernel がconfigから読んだ `blocks_per_slice[s]` 回だけA ObjectFIFOを正しく
   acquire/releaseすること。
 - core が終了順に任意 DDR address へ y を scatter すること。
 
@@ -404,8 +408,8 @@ R = 4, B_h = 32, C_h = 8, B_w = 256, V = 32
 次を計算できます。
 
 ```
-S_c(B_h,B_w)      = Σ{s in column c} B_h*B_w*slice_blocks[s]
-Nblock_c(B_h,B_w) = Σ{s in column c} slice_blocks[s]
+S_c(B_h,B_w)      = Σ{s in column c} B_h*B_w*blocks_per_slice[s]
+Nblock_c(B_h,B_w) = Σ{s in column c} blocks_per_slice[s]
 T_c               = max(4*S_c / BW_DMA,
                         S_c / throughput_slots + Nslice_c*C_h*t_reduce)
                     + Nblock_c*t_object + Nslice_c*t_slice
@@ -434,16 +438,16 @@ Pareto frontier だけを実機で測ります。ここで **matrix ごとの Pa
 一つの行列・一つの選択済み plan から packer は、概念上以下を生成する。
 
 ```text
-packed_A      : slice -> horizontal block -> core-row -> local row -> slot 順の index/value 本体
-slice_blocks  : 各 slice の uint16 p。p 個の A block を読む、というruntime control表
+packed_a           : slice -> horizontal block -> core-row -> local row -> slot 順の index/value 本体
+blocks_per_slice   : 各 slice の uint16 p。p 個の A block を読む、というruntime control表
 manifest.json : この packed data を解釈・検証・再現するための静的なsidecar
 ```
 
-`packed_A` は大きな重みデータ、`slice_blocks[s]` は「slice `s` の横block数」であり、どちらも
+`packed_a` は大きな重みデータ、`blocks_per_slice[s]` は「slice `s` の横block数」であり、どちらも
 実行時に x から計算する値ではない。`manifest.json` はデータ本体ではなく、`M,K,R,B_h,B_w,C_h,V`、
 format version、index型、slice/column境界、各columnの A offset と control長、padding量、元行列と
-packing parameter の hash を記録する。host は manifest を読んで正しい packed_A と slice_blocks を選び、
-slice_blocks を x の後ろへ詰めた config object を作る。これにより異なる matrix 用の重み・xclbin・
+packing parameter の hash を記録する。host は manifest を読んで正しい packed_a と blocks_per_slice を選び、
+blocks_per_slice を x の後ろへ詰めた config object を作る。これにより異なる matrix 用の重み・xclbin・
 plan を取り違えない。
 
 今回の Llama-2-7B pruning model に対する storage-only simulation で、`B_h=8` の
@@ -523,9 +527,9 @@ Slice-ELL を同時に導入しない。
 1. 最初のparameterを `R=4, B_h=32, B_w=256` に固定する。packer は将来の比較用に
    `--core-rows 4 --block-height 32 --block-width 256` のような任意値を受けるが、自動探索・
    `pareto.json`・`plan.json` は作らない。
-2. row-order-preserving packer を作り、`packed_A`, `slice_blocks`, `manifest.json` を出力する。
-   `slice_blocks[s]=0`、末尾 row、padding index=0、複数 Shim column への連続 slice 割当を含める。
-   runtime用 host reference は x と column-local `slice_blocks` から固定長 `packed_config` を生成する。
+2. row-order-preserving packer を作り、in-memory `packed_a`, `blocks_per_slice`, `manifest.json` を生成する。
+   `blocks_per_slice[s]=0`、末尾 row、padding index=0、複数 Shim column への連続 slice 割当を含める。
+   runtime用 host reference は x と column-local `blocks_per_slice` から固定長 `runtime_config` を生成する。
 3. 同じ packed format を読む Python reference と property test を作り、元 sparse matrix reference と
    全行一致させる。pack/unpack、padding、slice/column境界もNPUなしで検証する。
 4. manifest に固定parameter、容量・padding、format layoutを記録する。最終的な latency 最適化は
@@ -533,7 +537,9 @@ Slice-ELL を同時に導入しない。
 
 #### Phase 2 の実装入口
 
-`slice_ell.py` はNPU/MLIRに依存しない format module である。CSR の
+`slice_ell.py` はNPU/MLIRに依存しない format module である。test/host programから
+`csr_to_slice_ell()`または`dense_to_slice_ell()`をimportして、戻り値の`PackedSliceELL`を
+in-memoryで使うのが標準経路である。CSR の
 `(indptr, indices, values, shape)` を入力とし、既定の
 `R=4, B_h=32, B_w=256, shim_columns=8` で pack する。個別の比較には
 `--core-rows`、`--block-height`、`--block-width` を明示してよいが、Phase 2 の
@@ -541,13 +547,13 @@ baselineを変えてはならない。
 
 ```bash
 python -m iron.operators.spmv.slice_ell \
-  --csr-npz matrix.npz --output-dir npu_data/slice_ell --stem layer_name
+  --csr-npz matrix.npz --save-dir cache/slice_ell --stem layer_name
 
 # pruning 済み safetensors の一weightを直接packする場合
 python -m iron.operators.spmv.slice_ell \
   --safetensors model-00001-of-00006.safetensors \
   --tensor model.layers.0.self_attn.q_proj.weight \
-  --output-dir npu_data/slice_ell --stem layer0_q_proj
+  --save-dir cache/slice_ell --stem layer0_q_proj
 
 source /opt/xilinx/xrt/setup.sh
 python -m pytest iron/operators/spmv/test_slice_ell.py -q
@@ -555,21 +561,22 @@ python -m pytest iron/operators/spmv/test_slice_ell.py -q
 
 CLI入力のNPZには`indptr`、`indices`、`values`、および`shape=[M,K]`（または`K`）を入れる。
 `--safetensors`では一つの2-D tensorをその場でCSR化する（`safetensors` packageが必要）。
-出力は`*_packed_A.npy`、`*_slice_blocks.npy`、`*_manifest.json`である。testはNPUを使用せず、
-元CSR referenceとの一致、row順、末尾zero-row padding、`slice_blocks=0`、config objectの
-`[x | control | 64-byte padding]` layoutを検証する。
+`--save-dir`は任意のcache modeである。指定しなければファイルを作らない。指定時だけ
+`*_packed_a.bin`、`*_blocks_per_slice.bin`、`*_manifest.json`を保存する。testはNPUを使用せず、
+`cpu_spmv_csr()`と`cpu_spmv_slice_ell()`の一致、row順、末尾zero-row padding、
+`blocks_per_slice=0`、config objectの`[x | control | alignment zeros]` layoutを検証する。
 
 ### Phase 3: 静的な Slice-ELL data path を確認する
 
-1. `slice_blocks[s]` が全sliceで同じ小さなsynthetic matrixを使い、A split、config broadcast、
+1. `blocks_per_slice[s]` が全sliceで同じ小さなsynthetic matrixを使い、A split、config broadcast、
    y join、連続y drainを検証する。kernelは`V=32`を横slot方向に使い、block間はFP32の
    `row_acc[C_h]`へ蓄積し、slice末尾で一度だけBF16へ変換する。
 2. この段階では dynamic ObjectFIFO を使わない。`C_h` 行/core、`B_h=R*C_h` 行/slice の y が
    元の row 順に一度だけ DDR へ書かれることを確認する。
 
-### Phase 4: dynamic `slice_blocks[s]` を四 core micro-test で検証する
+### Phase 4: dynamic `blocks_per_slice[s]` を四 core micro-test で検証する
 
-1. `slice_blocks=[0,1,4,2]` のように全ゼロ slice と異なる長さを混在させる小さな matrix を使う。
+1. `blocks_per_slice=[0,1,4,2]` のように全ゼロ slice と異なる長さを混在させる小さな matrix を使う。
 2. xとcontrol表を含む一つの固定長config objectを四coreへbroadcastし、そこからpを読む。
    `for i in range(p)` のdynamic A acquire/releaseと、sliceごと一回のy releaseを
    `--dynamic-objFifos`でlowerする。
@@ -577,7 +584,7 @@ CLI入力のNPZには`indptr`、`indices`、`values`、および`shape=[M,K]`（
    ことを生成MLIRで確認する。
 4. timeout/deadlock、出力順、全coreのacquire/release数、生成BD/lockを検査する。
 
-**通過条件:** `slice_blocks[s]` の分布にかかわらず、y の長さ・順序が固定で、CPU reference と一致し、
+**通過条件:** `blocks_per_slice[s]` の分布にかかわらず、y の長さ・順序が固定で、CPU reference と一致し、
 deadlock しないこと。ここが Slice-ELL 固有の最大リスクである。
 
 ### Phase 5（後続）: 実 model layer と tuning

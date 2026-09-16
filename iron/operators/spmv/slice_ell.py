@@ -12,7 +12,7 @@ The linear A-word order is::
     slice -> horizontal block -> core-row -> local row
           -> [uint16 indices[B_w], BF16 values[B_w]]
 
-``slice_blocks[s]`` gives the number of horizontal blocks in slice ``s``.
+``blocks_per_slice[s]`` gives the number of horizontal blocks in slice ``s``.
 The first implementation defaults to R=4, B_h=32, B_w=256, but validation and
 the CLI intentionally allow an explicit legal geometry for later experiments.
 """
@@ -35,6 +35,7 @@ FORMAT_VERSION = 1
 CONFIG_ALIGNMENT_BYTES = 64
 
 
+# Hold and validate the Slice-ELL geometry shared by packer and future NPU code.
 @dataclass(frozen=True)
 class SliceELLConfig:
     """Geometry shared by packer, reference, and the future NPU design."""
@@ -45,6 +46,7 @@ class SliceELLConfig:
     lanes: int = LANES
     shim_columns: int = 8
 
+    # Reject a geometry that cannot map to the first NPU2 Slice-ELL design.
     def __post_init__(self) -> None:
         if not 1 <= self.core_rows <= 4:
             raise ValueError("core_rows must be in [1, 4] for one NPU2 MemTile")
@@ -58,19 +60,23 @@ class SliceELLConfig:
             raise ValueError("shim_columns must be positive")
 
     @property
+    # Derive the number of rows owned by one core.
     def core_height(self) -> int:
         return self.block_height // self.core_rows
 
     @property
+    # Return the uint16 payload length of one core's horizontal A block.
     def words_per_core_block(self) -> int:
         # Each local row is [indices B_w][values B_w].
         return self.core_height * 2 * self.block_width
 
     @property
+    # Return the uint16 payload length of one complete slice horizontal A block.
     def words_per_slice_block(self) -> int:
         return self.block_height * 2 * self.block_width
 
 
+# Convert numerical values to their BF16 bit pattern for mixed index/value storage.
 def _bf16_bits(values: np.ndarray | torch.Tensor | Sequence[float]) -> np.ndarray:
     """Round numeric values to BF16 and return their raw uint16 words."""
 
@@ -81,16 +87,19 @@ def _bf16_bits(values: np.ndarray | torch.Tensor | Sequence[float]) -> np.ndarra
     return tensor.view(torch.uint16).numpy().copy()
 
 
+# Reinterpret raw uint16 storage as a BF16 tensor without changing bits.
 def _words_to_bf16(words: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(np.ascontiguousarray(words, dtype=np.uint16)).view(torch.int16).view(torch.bfloat16)
 
 
+# Hash a raw uint16 payload so a cache and manifest can be matched safely.
 def _sha256_words(words: np.ndarray) -> str:
     return hashlib.sha256(np.ascontiguousarray(words, dtype=np.uint16).tobytes()).hexdigest()
 
 
+# Keep one in-memory packed Slice-ELL matrix and its interpretation metadata.
 @dataclass
-class SliceELLPacked:
+class PackedSliceELL:
     """A complete packed matrix plus the metadata required to consume it."""
 
     M: int
@@ -98,31 +107,36 @@ class SliceELLPacked:
     nnz: int
     config: SliceELLConfig
     padded_rows: int
-    packed_words: np.ndarray
-    slice_blocks: np.ndarray
+    packed_a: np.ndarray
+    blocks_per_slice: np.ndarray
     slice_word_offsets: np.ndarray
     column_slice_offsets: np.ndarray
 
     @property
+    # Return the common number of contiguous slices assigned to each Shim column.
     def slices_per_column(self) -> int:
         return int(self.column_slice_offsets[1] - self.column_slice_offsets[0])
 
     @property
+    # Return the number of slices including whole zero slices added for column balance.
     def total_slices(self) -> int:
-        return int(self.slice_blocks.size)
+        return int(self.blocks_per_slice.size)
 
     @property
-    def packed_bf16(self) -> torch.Tensor:
-        return _words_to_bf16(self.packed_words)
+    # View packed A as BF16 for APIs whose buffer object is BF16-typed.
+    def packed_a_as_bf16(self) -> torch.Tensor:
+        return _words_to_bf16(self.packed_a)
 
-    def column_slice_blocks(self, column: int) -> np.ndarray:
+    # Return only the control entries owned by one Shim column.
+    def column_blocks_per_slice(self, column: int) -> np.ndarray:
         if not 0 <= column < self.config.shim_columns:
             raise IndexError("column is outside this packed matrix")
         begin, end = self.column_slice_offsets[column : column + 2]
-        return self.slice_blocks[begin:end]
+        return self.blocks_per_slice[begin:end]
 
+    # Build the JSON sidecar that describes, but does not contain, packed A.
     def manifest(self) -> dict:
-        """Return the static sidecar; payloads themselves stay in .npy files."""
+        """Return the static sidecar for optional raw-binary cache files."""
 
         return {
             "format": "row-order-preserving-slice-ell",
@@ -137,40 +151,46 @@ class SliceELLPacked:
             "slices_per_column": self.slices_per_column,
             "column_slice_offsets": self.column_slice_offsets.tolist(),
             "slice_word_offsets": self.slice_word_offsets.tolist(),
-            "slice_blocks_dtype": "uint16",
-            "packed_words_dtype": "uint16",
+            "blocks_per_slice_dtype": "uint16",
+            "packed_a_dtype": "uint16",
             "index_dtype": "uint16",
             "padding_index": 0,
             "padding_value": "BF16 +0",
-            "packed_words": int(self.packed_words.size),
-            "packed_A_sha256": _sha256_words(self.packed_words),
-            "slice_blocks_sha256": _sha256_words(self.slice_blocks),
+            "packed_a_words": int(self.packed_a.size),
+            "packed_a_sha256": _sha256_words(self.packed_a),
+            "blocks_per_slice_sha256": _sha256_words(self.blocks_per_slice),
         }
 
-    def save(self, directory: str | Path, stem: str = "slice_ell") -> dict[str, Path]:
-        """Write a reproducible payload triplet and return its paths."""
+    # Optionally save raw-binary cache files; normal tests use this object in memory.
+    def save_cache(self, directory: str | Path, stem: str = "slice_ell") -> dict[str, Path]:
+        """Write optional ``.bin`` payloads and a manifest, then return their paths."""
 
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         paths = {
-            "packed_A": directory / f"{stem}_packed_A.npy",
-            "slice_blocks": directory / f"{stem}_slice_blocks.npy",
+            "packed_a": directory / f"{stem}_packed_a.bin",
+            "blocks_per_slice": directory / f"{stem}_blocks_per_slice.bin",
             "manifest": directory / f"{stem}_manifest.json",
         }
-        np.save(paths["packed_A"], self.packed_words)
-        np.save(paths["slice_blocks"], self.slice_blocks)
-        paths["manifest"].write_text(json.dumps(self.manifest(), indent=2, sort_keys=True) + "\n")
+        np.ascontiguousarray(self.packed_a, dtype="<u2").tofile(paths["packed_a"])
+        np.ascontiguousarray(self.blocks_per_slice, dtype="<u2").tofile(paths["blocks_per_slice"])
+        manifest = self.manifest() | {
+            "storage_byte_order": "little",
+            "payload_files": {name: path.name for name, path in paths.items() if name != "manifest"},
+        }
+        paths["manifest"].write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         return paths
 
 
-def pack_csr(
+# Convert a CSR matrix to the in-memory row-order-preserving Slice-ELL format.
+def csr_to_slice_ell(
     indptr: np.ndarray | Sequence[int],
     indices: np.ndarray | Sequence[int],
     values: np.ndarray | torch.Tensor | Sequence[float],
     *,
     K: int,
     config: SliceELLConfig = SliceELLConfig(),
-) -> SliceELLPacked:
+) -> PackedSliceELL:
     """Pack a CSR matrix without reordering rows.
 
     The final incomplete slice and enough whole zero slices to distribute a
@@ -196,7 +216,7 @@ def pack_csr(
     slices_per_column = (logical_slices + config.shim_columns - 1) // config.shim_columns
     total_slices = slices_per_column * config.shim_columns
     padded_rows = total_slices * config.block_height
-    slice_blocks = np.zeros(total_slices, dtype=np.uint16)
+    blocks_per_slice = np.zeros(total_slices, dtype=np.uint16)
 
     for slice_id in range(total_slices):
         row_begin = slice_id * config.block_height
@@ -206,17 +226,17 @@ def pack_csr(
         max_nnz = int(max(indptr[row + 1] - indptr[row] for row in range(row_begin, row_end)))
         p = (max_nnz + config.block_width - 1) // config.block_width
         if p > np.iinfo(np.uint16).max:
-            raise ValueError("slice_blocks does not fit uint16")
-        slice_blocks[slice_id] = p
+            raise ValueError("blocks_per_slice does not fit uint16")
+        blocks_per_slice[slice_id] = p
     # Allocate exactly once.  A list of tiny row arrays would add a large Python
     # memory overhead for model-scale matrices and would transiently duplicate
     # the full packed payload during concatenate().
     slice_word_offsets = np.zeros(total_slices + 1, dtype=np.uint64)
     slice_word_offsets[1:] = np.cumsum(
-        slice_blocks.astype(np.uint64) * config.words_per_slice_block, dtype=np.uint64
+        blocks_per_slice.astype(np.uint64) * config.words_per_slice_block, dtype=np.uint64
     )
-    packed_words = np.zeros(int(slice_word_offsets[-1]), dtype=np.uint16)
-    for slice_id, p in enumerate(slice_blocks.tolist()):
+    packed_a = np.zeros(int(slice_word_offsets[-1]), dtype=np.uint16)
+    for slice_id, p in enumerate(blocks_per_slice.tolist()):
         row_begin = slice_id * config.block_height
         for block_id in range(p):
             block_base = int(slice_word_offsets[slice_id]) + block_id * config.words_per_slice_block
@@ -231,24 +251,25 @@ def pack_csr(
                         take_end = min(take_begin + config.block_width, stop)
                         count = take_end - take_begin
                         if count:
-                            packed_words[row_base : row_base + count] = indices[take_begin:take_end].astype(np.uint16, copy=False)
+                            packed_a[row_base : row_base + count] = indices[take_begin:take_end].astype(np.uint16, copy=False)
                             value_base = row_base + config.block_width
-                            packed_words[value_base : value_base + count] = value_bits[take_begin:take_end]
+                            packed_a[value_base : value_base + count] = value_bits[take_begin:take_end]
     column_slice_offsets = np.arange(config.shim_columns + 1, dtype=np.uint32) * slices_per_column
-    return SliceELLPacked(
+    return PackedSliceELL(
         M=M,
         K=K,
         nnz=nnz,
         config=config,
         padded_rows=padded_rows,
-        packed_words=packed_words,
-        slice_blocks=slice_blocks,
+        packed_a=packed_a,
+        blocks_per_slice=blocks_per_slice,
         slice_word_offsets=slice_word_offsets,
         column_slice_offsets=column_slice_offsets,
     )
 
 
-def pack_dense(matrix: torch.Tensor, *, config: SliceELLConfig = SliceELLConfig()) -> SliceELLPacked:
+# Convert one dense pruning weight tensor to in-memory Slice-ELL via CSR.
+def dense_to_slice_ell(matrix: torch.Tensor, *, config: SliceELLConfig = SliceELLConfig()) -> PackedSliceELL:
     """Convert one 2-D pruned weight tensor to CSR and pack it.
 
     This is intentionally a convenience bridge for safetensors checkpoints,
@@ -263,7 +284,7 @@ def pack_dense(matrix: torch.Tensor, *, config: SliceELLConfig = SliceELLConfig(
     rows, columns = torch.nonzero(matrix, as_tuple=True)
     counts = torch.bincount(rows, minlength=M).to(torch.int64)
     indptr = torch.cat((torch.zeros(1, dtype=torch.int64), counts.cumsum(0))).numpy()
-    return pack_csr(
+    return csr_to_slice_ell(
         indptr,
         columns.numpy(),
         matrix[rows, columns],
@@ -272,7 +293,8 @@ def pack_dense(matrix: torch.Tensor, *, config: SliceELLConfig = SliceELLConfig(
     )
 
 
-def reference_csr(
+# Compute y = A*x on CPU directly from CSR; used as the packing correctness oracle.
+def cpu_spmv_csr(
     indptr: np.ndarray | Sequence[int],
     indices: np.ndarray | Sequence[int],
     values: np.ndarray | torch.Tensor | Sequence[float],
@@ -293,17 +315,18 @@ def reference_csr(
     return out.to(torch.bfloat16)
 
 
-def reference_slice_ell(packed: SliceELLPacked, vector: torch.Tensor) -> torch.Tensor:
-    """Interpret ``packed_A`` exactly in the documented block/core-row order."""
+# Compute y = A*x on CPU by interpreting the packed Slice-ELL layout.
+def cpu_spmv_slice_ell(packed: PackedSliceELL, vector: torch.Tensor) -> torch.Tensor:
+    """Interpret packed A exactly in the documented block/core-row order."""
 
     if vector.numel() != packed.K:
         raise ValueError(f"vector has {vector.numel()} elements; expected K={packed.K}")
     x = vector.detach().cpu().contiguous().to(torch.bfloat16).float()
-    words = np.asarray(packed.packed_words, dtype=np.uint16)
+    words = np.asarray(packed.packed_a, dtype=np.uint16)
     out = torch.zeros(packed.padded_rows, dtype=torch.float32)
     cursor = 0
     width, core_height = packed.config.block_width, packed.config.core_height
-    for slice_id, p in enumerate(packed.slice_blocks.tolist()):
+    for slice_id, p in enumerate(packed.blocks_per_slice.tolist()):
         row_base = slice_id * packed.config.block_height
         for _ in range(p):
             for core_row in range(packed.config.core_rows):
@@ -317,17 +340,18 @@ def reference_slice_ell(packed: SliceELLPacked, vector: torch.Tensor) -> torch.T
                     values = _words_to_bf16(object_row[width:]).float()
                     out[row] += (values * x[indices]).sum()
     if cursor != words.size:
-        raise RuntimeError("packed_A length disagrees with slice_blocks")
+        raise RuntimeError("packed_a length disagrees with blocks_per_slice")
     return out[: packed.M].to(torch.bfloat16)
 
 
-def make_packed_config(
+# Create the fixed-length host config object [x bits | blocks_per_slice | alignment zeros].
+def make_runtime_config(
     vector: torch.Tensor,
-    local_slice_blocks: np.ndarray | Sequence[int],
+    local_blocks_per_slice: np.ndarray | Sequence[int],
     *,
     max_local_slices: int | None = None,
 ) -> torch.Tensor:
-    """Pack ``[BF16 x bits | uint16 slice_blocks | 64-B zero padding]``.
+    """Pack ``[BF16 x bits | uint16 blocks_per_slice | alignment zeros]``.
 
     All Shim columns use the same object length by passing their common
     ``max_local_slices``.  This function is host-side only; the future kernel
@@ -335,9 +359,9 @@ def make_packed_config(
     """
 
     x_bits = _bf16_bits(vector)
-    controls = np.asarray(local_slice_blocks, dtype=np.uint64).reshape(-1)
+    controls = np.asarray(local_blocks_per_slice, dtype=np.uint64).reshape(-1)
     if np.any(controls > np.iinfo(np.uint16).max):
-        raise ValueError("slice_blocks must fit uint16")
+        raise ValueError("blocks_per_slice must fit uint16")
     if max_local_slices is None:
         max_local_slices = int(controls.size)
     if max_local_slices < controls.size:
@@ -351,6 +375,7 @@ def make_packed_config(
     return _words_to_bf16(packed)
 
 
+# Load a conventional CSR NPZ for the optional standalone packing CLI.
 def _load_csr_npz(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     data = np.load(path)
     required = {"indptr", "indices", "values"}
@@ -368,13 +393,14 @@ def _load_csr_npz(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     return data["indptr"], data["indices"], data["values"], K
 
 
+# Run the optional standalone packer; imported use is the normal test path.
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pack a CSR matrix into row-order-preserving Slice-ELL")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--csr-npz", type=Path, help="npz with indptr, indices, values, and shape")
     source.add_argument("--safetensors", type=Path, help="one pruned-model safetensors shard")
     parser.add_argument("--tensor", help="2-D tensor name when --safetensors is used")
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--save-dir", type=Path, help="optional directory for raw-binary cache files")
     parser.add_argument("--stem", default="slice_ell")
     parser.add_argument("--core-rows", type=int, default=4)
     parser.add_argument("--block-height", type=int, default=32)
@@ -384,7 +410,7 @@ def main() -> None:
     config = SliceELLConfig(args.core_rows, args.block_height, args.block_width, LANES, args.shim_columns)
     if args.csr_npz:
         indptr, indices, values, K = _load_csr_npz(args.csr_npz)
-        packed = pack_csr(indptr, indices, values, K=K, config=config)
+        packed = csr_to_slice_ell(indptr, indices, values, K=K, config=config)
     else:
         if not args.tensor:
             parser.error("--tensor is required with --safetensors")
@@ -395,9 +421,10 @@ def main() -> None:
         with safe_open(args.safetensors, framework="pt", device="cpu") as handle:
             if args.tensor not in handle.keys():
                 parser.error(f"tensor {args.tensor!r} was not found in {args.safetensors}")
-            packed = pack_dense(handle.get_tensor(args.tensor), config=config)
-    paths = packed.save(args.output_dir, args.stem)
-    print(json.dumps({name: str(path) for name, path in paths.items()}, sort_keys=True))
+            packed = dense_to_slice_ell(handle.get_tensor(args.tensor), config=config)
+    if args.save_dir:
+        paths = packed.save_cache(args.save_dir, args.stem)
+        print(json.dumps({name: str(path) for name, path in paths.items()}, sort_keys=True))
     print(json.dumps(packed.manifest(), sort_keys=True))
 
 
