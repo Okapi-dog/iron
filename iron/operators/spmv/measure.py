@@ -2,11 +2,12 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Device-only Phase-1 SpMV benchmark, comparable in scope to Phase 0.
+"""Sync-exclusive Phase-1 SpMV benchmark, comparable in scope to Phase 0.
 
-This script intentionally measures ``result.npu_time`` only.  It excludes host
-tensor creation and host/device synchronization, just as the Phase-0 table used
-the device portion of ``run_runlist()`` rather than an outer wall-clock timer.
+This script measures the new runtime's ``result.npu_time``.  It is the host
+wall-clock around XRT kernel launch and ``wait()``, and excludes host tensor
+creation and host/device BO synchronization.  That is the same scope as the
+old ``run_runlist()`` timer, rather than a hardware cycle counter.
 """
 
 import json

@@ -103,12 +103,11 @@ def spmv_ell(dev, M, K, ell_width, rows, cols, rows_per_core):
     ]
 
     def sequence(A, X, Y, a_prods, x_prods, y_conss):
-        tx = TaskGroup()
-        for col in range(cols):
-            x_prods[col].fill(X, x_tap, group=tx)
-        tx.finish()
+        # Match the Phase-0 schedule: submit A and x fills before waiting for
+        # any drain, so the independent Shim DMA channels can overlap them.
         ta = TaskGroup()
         for col in range(cols):
+            x_prods[col].fill(X, x_tap, group=ta)
             a_prods[col].fill(A, a_taps[col], group=ta)
             y_conss[col].drain(Y, y_taps[col], group=ta, wait=True)
         ta.finish()
@@ -173,11 +172,9 @@ def spmv_sell32(dev, M, K, ell_width, rows, cols):
     y_taps = [TensorAccessPattern(l3_y_ty.__args__[0], col * blocks_per_column * 32,
               [1, 1, 1, blocks_per_column * 32], [0, 0, 0, 1]) for col in range(cols)]
     def sequence(A, X, Y, a_prods, x_prods, y_conss):
-        tx = TaskGroup()
-        for col in range(cols): x_prods[col].fill(X, x_tap, group=tx)
-        tx.finish()
         ta = TaskGroup()
         for col in range(cols):
+            x_prods[col].fill(X, x_tap, group=ta)
             a_prods[col].fill(A, a_taps[col], group=ta)
             y_conss[col].drain(Y, y_taps[col], group=ta, wait=True)
         ta.finish()
@@ -228,11 +225,9 @@ def spmv_sell32_block(dev, M, K, ell_width, rows, cols):
     x_tap = TensorAccessPattern(l3_x_ty.__args__[0], 0, [1, 1, 1, K], [0, 0, 0, 1])
     y_taps = [TensorAccessPattern(l3_y_ty.__args__[0], col * blocks_per_col * 32, [1, 1, 1, blocks_per_col * 32], [0, 0, 0, 1]) for col in range(cols)]
     def sequence(A, X, Y, a_prods, x_prods, y_conss):
-        tx = TaskGroup()
-        for col in range(cols): x_prods[col].fill(X, x_tap, group=tx)
-        tx.finish()
         ta = TaskGroup()
         for col in range(cols):
+            x_prods[col].fill(X, x_tap, group=ta)
             a_prods[col].fill(A, a_taps[col], group=ta)
             y_conss[col].drain(Y, y_taps[col], group=ta, wait=True)
         ta.finish()
