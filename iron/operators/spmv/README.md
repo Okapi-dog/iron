@@ -96,10 +96,40 @@ column内join後のy drain offsetはELLで`0,2,4,6`、SELL-32/blockで`0,32,64,9
 4 core-rowの出力を元のrow順で連続している。今回の最小caseのTAP outer iterationは1であり、d3の
 65上限に達しない。大きい行列でのTAP chunking/BD数評価は次の性能評価で行う。
 
+## Phase 0 / Phase 1: 全32 coreの移行比較
+
+Phase 0の旧実装（`devel`）と同じ3 shape、全32 core（4 core-row × 8 core-column）、
+width=`K/8`（12.5%密度相当）で測った。通常SELL-32はPhase 0の比較対象ではなかったため、
+ここでも **ELL と SELL-32 blockだけ**を表に載せる。
+
+Phase 1の再現コマンドは次である。結果JSONはgitignore対象の
+`npu_data/phase1_mlir_v1.4.3/full_core_device_only.json`に置く。
+
+```bash
+python iron/operators/spmv/measure.py
+```
+
+各sampleは2回warm-up後の1回を採用し、5 sampleのmean/min/max/std. dev.を出す。Phase 1は
+新版runtimeの`result.npu_time`、Phase 0は旧runtimeの`run_runlist()`戻り値であり、どちらも
+host側のtensor生成・BO同期を含まないdevice-only値である。sample間は4秒idleにした。全6条件で
+CPU reference一致した。
+
+| `M × K` | width | kernel | Phase 0 mean | Phase 1 mean | Phase 1 min | Phase 1 max | Phase 1 std. dev. | Phase 1 effective BW | 結果 |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---|
+| `4096 × 4096` | 512 | ELL | 265.13 us | 590.19 us | 572.17 us | 618.37 us | 16.69 us | 14.241 GB/s | PASS |
+| `4096 × 4096` | 512 | SELL-32 block | 261.96 us | 571.58 us | 561.40 us | 580.53 us | 7.29 us | 14.705 GB/s | PASS |
+| `4096 × 11008` | 1376 | ELL | 517.97 us | 1341.38 us | 1333.46 us | 1361.27 us | 10.11 us | 16.829 GB/s | PASS |
+| `4096 × 11008` | 1376 | SELL-32 block | 520.63 us | 1336.94 us | 1329.56 us | 1348.00 us | 7.74 us | 16.885 GB/s | PASS |
+| `28672 × 8192` | 1024 | ELL | 2207.14 us | 6533.19 us | 6521.80 us | 6546.40 us | 8.74 us | 17.987 GB/s | PASS |
+| `28672 × 8192` | 1024 | SELL-32 block | 2182.89 us | 6515.70 us | 6508.55 us | 6524.51 us | 5.57 us | 18.036 GB/s | PASS |
+
+この表は「移植が正しく動くこと」と同一規模のdevice-only測定を示すものであり、**toolchainだけの
+速度比較ではない**。Phase 1は最新Runtimeに合わせてkernelとdata pathを最小から書き直しており、
+旧kernelのloop pragma・allocation・artifact構成をまだ性能同等に移植していない。従って上表の
+遅さをmlir-aie更新による性能劣化とは結論付けない。Phase 2以降で同じkernel最適化とTAP/BD構成を
+揃えてから、初めて性能回帰として評価する。
+
 ## 次の順序
 
-1. `design_sell32.py` 相当を最新 `MLIROperator` / `Runtime`へ移し、固定幅SELL-32のjoin/splitと
-   contiguous y drainを検証する。
-2. `design_sell32_block.py` 相当の横block pathを移し、y accumulateとx broadcastを検証する。
-3. 各段階で生成MLIRと`input_with_addresses.mlir`を調べ、TAPのd3、BD数、y drain offsetを旧baselineと
-   比較する。Slice-ELLとdynamic ObjectFIFOはこの段階では導入しない。
+Phase 1の静的ELL / SELL-32 / SELL-32 block移植は完了した。次はSlice-ELLのpacker/referenceを
+先に作り、静的slice path、最後にdynamic ObjectFIFOを小さいmatrixで段階的に検証する。
