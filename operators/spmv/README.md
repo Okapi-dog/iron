@@ -446,6 +446,7 @@ python -c 'from save_sparse_matrix import save; save(output_dir="./npu_data", au
   従って本Phase 0では、通常実行の正確性・性能baselineは取得済みだが、解析可能なDMA/FIFO
   traceは未取得である。trace有効buildの長時間化を、Phase 1へ進む前に再確認する。
 
-この表のJSON、log、xclbin、MLIR、raw traceは一時のclean build directoryにのみ置き、
-commitしない。commit前には`git status --short --branch`が意図したREADME変更だけであることを
-確認する。
+再実行用runner、成功・失敗のJSONとlogは、gitignore対象の
+`npu_data/phase0_devel_2026-09-16/`へ保存する。xclbin、MLIR、partial raw traceは
+一時のclean build directoryにのみ置き、いずれの生成物もcommitしない。commit前には
+`git status --short --branch`が意図したREADME変更だけであることを確認する。
