@@ -543,11 +543,18 @@ baselineを変えてはならない。
 python -m iron.operators.spmv.slice_ell \
   --csr-npz matrix.npz --output-dir npu_data/slice_ell --stem layer_name
 
+# pruning 済み safetensors の一weightを直接packする場合
+python -m iron.operators.spmv.slice_ell \
+  --safetensors model-00001-of-00006.safetensors \
+  --tensor model.layers.0.self_attn.q_proj.weight \
+  --output-dir npu_data/slice_ell --stem layer0_q_proj
+
 source /opt/xilinx/xrt/setup.sh
 python -m pytest iron/operators/spmv/test_slice_ell.py -q
 ```
 
 CLI入力のNPZには`indptr`、`indices`、`values`、および`shape=[M,K]`（または`K`）を入れる。
+`--safetensors`では一つの2-D tensorをその場でCSR化する（`safetensors` packageが必要）。
 出力は`*_packed_A.npy`、`*_slice_blocks.npy`、`*_manifest.json`である。testはNPUを使用せず、
 元CSR referenceとの一致、row順、末尾zero-row padding、`slice_blocks=0`、config objectの
 `[x | control | 64-byte padding]` layoutを検証する。

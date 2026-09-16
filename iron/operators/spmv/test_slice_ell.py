@@ -10,6 +10,7 @@ from iron.operators.spmv.slice_ell import (
     SliceELLConfig,
     make_packed_config,
     pack_csr,
+    pack_dense,
     reference_csr,
     reference_slice_ell,
 )
@@ -46,6 +47,16 @@ def test_all_zero_matrix_has_no_a_payload_and_zero_output():
     assert packed.packed_words.size == 0
     x = torch.ones(64, dtype=torch.bfloat16)
     assert torch.equal(reference_slice_ell(packed, x), torch.zeros(33, dtype=torch.bfloat16))
+
+
+def test_pack_dense_is_a_row_order_preserving_csr_bridge():
+    matrix = torch.zeros((35, 67), dtype=torch.bfloat16)
+    matrix[0, [3, 9, 65]] = torch.tensor([1.0, -2.0, 0.5], dtype=torch.bfloat16)
+    matrix[34, 2] = 4.0
+    packed = pack_dense(matrix, config=SliceELLConfig(block_width=32, shim_columns=2))
+    x = torch.rand(67, generator=torch.Generator().manual_seed(11)).to(torch.bfloat16)
+    expected = (matrix.float() @ x.float()).to(torch.bfloat16)
+    assert torch.equal(reference_slice_ell(packed, x), expected)
 
 
 def test_packed_config_keeps_bf16_vector_bits_and_uint16_control_words():

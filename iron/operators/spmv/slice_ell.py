@@ -248,6 +248,30 @@ def pack_csr(
     )
 
 
+def pack_dense(matrix: torch.Tensor, *, config: SliceELLConfig = SliceELLConfig()) -> SliceELLPacked:
+    """Convert one 2-D pruned weight tensor to CSR and pack it.
+
+    This is intentionally a convenience bridge for safetensors checkpoints,
+    not a dense SpMV implementation.  ``nonzero`` preserves the original row
+    order and returns columns in increasing order within each row.
+    """
+
+    if matrix.ndim != 2:
+        raise ValueError("matrix must be two-dimensional")
+    matrix = matrix.detach().cpu().contiguous()
+    M, K = (int(dim) for dim in matrix.shape)
+    rows, columns = torch.nonzero(matrix, as_tuple=True)
+    counts = torch.bincount(rows, minlength=M).to(torch.int64)
+    indptr = torch.cat((torch.zeros(1, dtype=torch.int64), counts.cumsum(0))).numpy()
+    return pack_csr(
+        indptr,
+        columns.numpy(),
+        matrix[rows, columns],
+        K=K,
+        config=config,
+    )
+
+
 def reference_csr(
     indptr: np.ndarray | Sequence[int],
     indices: np.ndarray | Sequence[int],
@@ -346,7 +370,10 @@ def _load_csr_npz(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pack a CSR matrix into row-order-preserving Slice-ELL")
-    parser.add_argument("--csr-npz", type=Path, required=True, help="npz with indptr, indices, values, and shape")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--csr-npz", type=Path, help="npz with indptr, indices, values, and shape")
+    source.add_argument("--safetensors", type=Path, help="one pruned-model safetensors shard")
+    parser.add_argument("--tensor", help="2-D tensor name when --safetensors is used")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--stem", default="slice_ell")
     parser.add_argument("--core-rows", type=int, default=4)
@@ -354,9 +381,21 @@ def main() -> None:
     parser.add_argument("--block-width", type=int, default=256)
     parser.add_argument("--shim-columns", type=int, default=8)
     args = parser.parse_args()
-    indptr, indices, values, K = _load_csr_npz(args.csr_npz)
     config = SliceELLConfig(args.core_rows, args.block_height, args.block_width, LANES, args.shim_columns)
-    packed = pack_csr(indptr, indices, values, K=K, config=config)
+    if args.csr_npz:
+        indptr, indices, values, K = _load_csr_npz(args.csr_npz)
+        packed = pack_csr(indptr, indices, values, K=K, config=config)
+    else:
+        if not args.tensor:
+            parser.error("--tensor is required with --safetensors")
+        try:
+            from safetensors.torch import safe_open
+        except ImportError as error:
+            parser.error(f"--safetensors requires safetensors: {error}")
+        with safe_open(args.safetensors, framework="pt", device="cpu") as handle:
+            if args.tensor not in handle.keys():
+                parser.error(f"tensor {args.tensor!r} was not found in {args.safetensors}")
+            packed = pack_dense(handle.get_tensor(args.tensor), config=config)
     paths = packed.save(args.output_dir, args.stem)
     print(json.dumps({name: str(path) for name, path in paths.items()}, sort_keys=True))
     print(json.dumps(packed.manifest(), sort_keys=True))
