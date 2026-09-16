@@ -677,11 +677,28 @@ release(config)
 ```
 
 ここで重要なのは、通常の外部C++ `Kernel(A, x, y)`をblockごとにcallしてはいけないことである。
-そのfunction内のlocal `aie::accum`はcallから戻れば生存しない。Phase 3ではp個のA pointerを一callへ
-渡すことで回避したが、runtime pではそのABIは作れない。Phase 4の第一案では、Worker内の`scf.for`が
-`acc[0..7]`をSSA loop-carried valueとして持つように、AIE vector/accumulator operationをcore MLIRへ
-直接emitする、または同等にaccumulator値をcore内へinlineした形で表現する。これによりObjectFIFOの
-`acquire(1)/release(1)`とMAC loopが同じcore functionにあり、register allocationの対象になる。
+ObjectFIFOはkernelを常駐起動する機構ではなく、Workerのcore programがFIFO bufferをlockしてpointerを
+得る機構である。Workerが`acquire`した後に書かれた`kernel(...)`だけが、一回のC++ function callになる。
+C++ functionのlocal `aie::accum`はそのcallのactivationだけの値であり、return後に次のcallへ渡す値ではない
+（物理registerが自動的にzeroになるという意味ではなく、compilerが次callでそのregisterを再利用できるため
+stateとしては利用できない）。
+
+Phase 3は、p=2なら`a0,a1`を**先に二つともacquire**し、`slice_ell_horizontal_p2(a0,a1,x,y)`を一回だけ
+callする。C++ functionの冒頭で`acc0..acc7=0`を一回だけ行い、a0、a1の順に同じaccumulatorへMACしてから
+returnするので、二block間でstateはregisterに残る。`a_fifo.release(2)`はそのcallの**後**であり、a0/a1の
+間でkernelを起動し直してはいない。
+
+しかしruntime pではC++ functionの引数個数を`p`にできない。Phase 4の第一案では、`acc[0..7]`を
+Worker内の`scf.for`のloop-carried SSA valueとして持ち、横32-lane MAC / reduction自体をAIE vector/
+accumulator MLIR operationとしてそのcore function内にemitする。これはIRONを捨てる方法ではない。Worker、
+ObjectFIFO、MemTile split/join、Runtime、DMAはIRONのままで、C++ `.o`へ置いていたmicrokernel本体だけを
+Workerが生成するcore MLIRへ置く、という意味である。こうすると`acquire(1) -> MAC -> release(1)`を繰返しても
+accumulator値は同じcore loopのSSA値であり、compilerがregister allocationできる。
+
+`ExternalFunction(inline=True)`などのC++ kernel inliningはcall overheadを減らす可能性はあるが、blockごとに
+実行するC++ function内の`acc=zero`を跨いでstateを持続させる機能ではない。そのため、これ単独をPhase 4の
+解には数えない。C++ kernel自身にObjectFIFO lockのacquire/releaseをさせてfree-running化する方法は別案だが、
+現行MLIR-AIEには確立したIRONの実装例がなく、最初の実装経路にはしない。
 
 この方式が本当にaccumulator registerに割り付くかは仮定しない。生成LLVM/assemblyでp-loop内部に
 accumulatorのL1 load/storeがないこと、stack/L1 layoutが収まること、p=1/2 static caseと数値が一致することを
