@@ -140,12 +140,13 @@ def test_slice_ell_dynamic_scalar_state_p0142_8col(aie_context):
     p_by_col = packed.blocks_per_slice.reshape(cols, slices_per_col)
     blocks_per_col = tuple(int(p.sum()) for p in p_by_col)
     assert blocks_per_col == (7,) * cols
-    config = torch.empty(cols * (K + slices_per_col), dtype=torch.int16)
+    config = torch.zeros(cols * (2 + K + slices_per_col), dtype=torch.int16)
     x_words = vector.view(torch.uint16).view(torch.int16)
     for col in range(cols):
-        base = col * (K + slices_per_col)
-        config[base : base + K] = x_words
-        config[base + K : base + K + slices_per_col] = torch.from_numpy(
+        base = col * (2 + K + slices_per_col)
+        config[base] = 8
+        config[base + 2 : base + 2 + K] = x_words
+        config[base + 2 + K : base + 2 + K + slices_per_col] = torch.from_numpy(
             p_by_col[col].astype(np.int16, copy=False)
         )
     operator = SpMVSliceELLDynamicScalarMultiCol(
@@ -160,6 +161,47 @@ def test_slice_ell_dynamic_scalar_state_p0142_8col(aie_context):
         warmup_iters=1,
     )
     assert not errors, errors
+
+
+def _assert_dynamic_scalar_state_rows_per_core(aie_context, block_height: int):
+    """Compile and run one non-specialized Phase-4 C_h geometry."""
+    M, K = block_height * 4, 512
+    ps = [0, 1, 4, 2]
+    row_counts = np.repeat(np.asarray(ps, dtype=np.int64) * 256, block_height)
+    indptr = np.concatenate(([0], np.cumsum(row_counts, dtype=np.int64)))
+    rng = np.random.default_rng(231)
+    indices = rng.integers(0, K, size=int(indptr[-1]), dtype=np.uint16)
+    values = rng.uniform(-1.0, 1.0, size=int(indptr[-1])).astype(np.float32)
+    packed = csr_to_slice_ell(
+        indptr, indices, values, K=K,
+        config=SliceELLConfig(core_rows=4, block_height=block_height, block_width=256, shim_columns=1),
+    )
+    vector = torch.rand(K, generator=torch.Generator().manual_seed(232)).to(torch.bfloat16)
+    expected = cpu_spmv_slice_ell(packed, vector)
+    config = torch.zeros(2 + K + len(ps), dtype=torch.int16)
+    config[0] = block_height // 4
+    config[2 : 2 + K] = vector.view(torch.uint16).view(torch.int16)
+    config[2 + K:] = torch.from_numpy(packed.blocks_per_slice.astype(np.int16, copy=False))
+    operator = SpMVSliceELLDynamicScalarMultiCol(
+        M=M, K=K, blocks_per_column=(int(packed.blocks_per_slice.sum()),),
+        block_height=block_height, context=aie_context,
+    )
+    errors, _, _ = run_test(
+        operator,
+        {"packed": packed.packed_a_as_bf16, "config": config},
+        {"output": expected}, rel_tol=0.06, abs_tol=1e-3, warmup_iters=1,
+    )
+    assert not errors, errors
+
+
+def test_slice_ell_dynamic_scalar_state_two_rows_per_core(aie_context):
+    """Phase-4 generic geometry: B_h=8, so each core owns two rows."""
+    _assert_dynamic_scalar_state_rows_per_core(aie_context, block_height=8)
+
+
+def test_slice_ell_dynamic_scalar_state_six_rows_per_core(aie_context):
+    """Phase-4 generic geometry: B_h=24, so each core owns six rows."""
+    _assert_dynamic_scalar_state_rows_per_core(aie_context, block_height=24)
 
 
 def test_slice_ell_horizontal_static_p1_1024x2048(aie_context):

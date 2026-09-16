@@ -330,20 +330,23 @@ class SpMVSliceELLDynamicScalarMultiCol(MLIROperator):
     M: int
     K: int
     blocks_per_column: tuple[int, ...]
+    block_height: int = 32
     trace_size: int = 0
     context: object | None = field(default=None, repr=False)
 
     _name_aliases: ClassVar[dict[str, str]] = {
         **MLIROperator._name_aliases,
         "blocks_per_column": "bpc",
+        "block_height": "bh",
         "trace_size": "trace",
     }
 
     def __post_init__(self) -> None:
         self.blocks_per_column = tuple(int(n) for n in self.blocks_per_column)
         cols = len(self.blocks_per_column)
-        if not 1 <= cols <= 8 or self.M <= 0 or self.M % (32 * cols) or self.K <= 0:
-            raise ValueError("cols must be 1..8 and M divisible by 32*cols")
+        if (not 1 <= cols <= 8 or self.block_height <= 0 or self.block_height % 8
+                or self.M <= 0 or self.M % (self.block_height * cols) or self.K <= 0):
+            raise ValueError("block_height must be a positive multiple of eight and divide M")
         if any(n <= 0 for n in self.blocks_per_column):
             raise ValueError("the first multicolumn implementation requires non-empty A columns")
         super().__init__(context=self.context)
@@ -354,7 +357,8 @@ class SpMVSliceELLDynamicScalarMultiCol(MLIROperator):
             DesignGenerator(
                 self.operator_dir / "design.py",
                 "spmv_slice_ell_dynamic_scalar_multicol",
-                (aie_utils.get_current_device(), self.M, self.K, self.blocks_per_column, self.trace_size),
+                (aie_utils.get_current_device(), self.M, self.K, self.blocks_per_column,
+                 self.block_height, self.trace_size),
             ),
         )
 
@@ -363,8 +367,10 @@ class SpMVSliceELLDynamicScalarMultiCol(MLIROperator):
 
     def get_arg_spec(self):
         cols = len(self.blocks_per_column)
+        config_words = 2 + self.K + self.M // (self.block_height * cols)
+        config_words += config_words % 2
         return [
-            AIERuntimeArgSpec("in", (sum(self.blocks_per_column) * 32 * 256 * 2,)),
-            AIERuntimeArgSpec("in", (cols * (self.K + self.M // (32 * cols)),), dtype=np.dtype(np.int16)),
+            AIERuntimeArgSpec("in", (sum(self.blocks_per_column) * self.block_height * 256 * 2,)),
+            AIERuntimeArgSpec("in", (cols * config_words,), dtype=np.dtype(np.int16)),
             AIERuntimeArgSpec("out", (self.M,)),
         ]

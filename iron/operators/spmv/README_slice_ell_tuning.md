@@ -396,9 +396,14 @@ B_w > 0 and B_w % 32 == 0   # 横32 lane kernel
 L1(R, B_h/R, B_w, K) <= L1 budget
 ```
 
-したがって `B_h=12, 20, 28` や `B_w=96, 160, 320` も合法なら評価対象である。探索時には
+offline packer では、したがって `B_h=12, 20, 28` や `B_w=96, 160, 320` も合法な評価対象である。探索時には
 ユーザーが指定した上下限・刻み、または全ての合法な32倍数を列挙する。`{2,4,8,16}` や
 `{128,256}` は探索を最初に短時間で回すための sample grid に過ぎない。
+
+ただし**現行 Phase 4 の NPU 出力契約**では、coreごとの`y[C_h]`がObjectFIFO DMAで4 B境界に
+収まる必要がある。BF16では`C_h`が偶数、`R=4`なら`B_h`が8の倍数であることが追加条件となる。
+これは探索の上限ではなく固定長転送の整列条件である。odd `C_h`を使うには、coreごとのy paddingと
+join/drain layoutの別設計が必要である。
 
 ここで重要なのは、**NPUなしの探索だけで実行時間の真の最適値は決められない**ことです。
 row nnz 分布から正確に分かるのは padding、A object 数、L1 使用量、column 間の仕事量だけであり、
@@ -651,12 +656,13 @@ core-private L1へ残す。BF16 yをblockごとにRMWする方式は採らない
 | y release | 固定width処理後 | sliceごと一回 | `p=0`を含め必ずsliceごと一回 |
 
 この設計はvector accumulatorをblock間で保存するものではない。各blockでは横32 laneのFP32 MACを行うが、
-block末尾で各rowを`reduce_add`し、8個だけのFP32 scalarをL1へ加算する。したがって数値的にはFP32のまま
+block末尾で各rowを`reduce_add`し、`C_h`個のFP32 scalarをL1へ加算する。したがって数値的にはFP32のまま
 slice全体を足し合わせ、BF16化はslice末尾に一回だけである。
 
 #### 4.2 採用案: L1 FP32 scalar-state方式
 
-`C_h=8`、`V=32`、`B_w=256`の最初のparameterでは、各coreに次だけを置く。
+`C_h=8`、`V=32`、`B_w=256`の最初のparameterでは、各coreに次だけを置く。実装上は`C_h`を
+runtime configから読むので、上記のDMA整列条件を満たす別の`C_h`へ変更できる。
 
 ```text
 state[C_h] : float32 = float32[8] = 32 B/core
@@ -665,9 +671,9 @@ state[C_h] : float32 = float32[8] = 32 B/core
 WorkerとC++ kernelの責務は次に固定する。
 
 ```text
-config = acquire(x_and_p_table)                     # jobあたり一回
+config = acquire(c_h_x_and_p_table)                  # jobあたり一回
 for local_s in assigned_slices:                      # slice数は静的
-  p = load_u16(config, K + local_s)                  # runtime control
+  p = load_u16(config, 2 + K + local_s)              # runtime control
   init_state(state)                                  # state[0..7] = 0.0f
   for i in range_(p):
     A = acquire(1)                                   # 8 KiB/coreの固定長A block
@@ -693,12 +699,13 @@ blockごとの追加state trafficは、8 FP32 read + 8 FP32 write = **64 B/core/
 configは第三のcontrol DMAを作らず、各Shim columnで一つだけ送るraw 16-bit objectとする。
 
 ```text
-[ BF16 x[0:K] のraw bits | uint16 p[0:N_local_slice] | 64 B alignment padding ]
+[ uint16 C_h | reserved uint16 | BF16 x[0:K] のraw bits |
+  uint16 p[0:N_local_slice] | optional 4 B alignment padding ]
 ```
 
 Workerがpを整数として読む必要があるため、device側のconfig object型は`int16`/`uint16` wordにする。
-kernelは先頭K wordだけを`bfloat16*`へreinterpretしてxとして使う。host側では全columnを同じ
-`config_words`へpadし、pの有効範囲と`0 <= p <= uint16_max`をpack前に検証する。
+kernelは先頭二wordのheader後のK wordだけを`bfloat16*`へreinterpretしてxとして使う。host側では全columnを同じ
+偶数の`config_words`へpadし、pの有効範囲と`0 <= p <= uint16_max`をpack前に検証する。
 
 Aはsliceごとのhost DMA taskに分けない。Phase 2の順序
 `[slice][block][core][row][idx][value]`は、column内ではA block objectの連続streamである。
@@ -755,17 +762,28 @@ device-only `result.npu_time` 5 sample平均、min/max/std. dev.、effective A+x
 
 | shape | cores | physical width | mean latency | effective A+config+y bandwidth |
 |---|---:|---:|---:|---:|
-| `4096 x 4096` | 32 | 512 | 275.1158 µs | 30.7601 GB/s |
-| `4096 x 4096` | 4 | 512 | 873.3352 µs | 9.6243 GB/s |
-| `4096 x 11008` | 32 | 1536 | 549.4140 µs | 46.1408 GB/s |
-| `4096 x 11008` | 4 | 1536 | 2401.7048 µs | 10.4910 GB/s |
-| `28672 x 8192` | 32 | 1024 | 2188.0702 µs | 53.7600 GB/s |
-| `28672 x 8192` | 4 | 1024 | 10820.6308 µs | 10.8604 GB/s |
+| `4096 x 4096` | 32 | 512 | 250.4590 µs | 33.7885 GB/s |
+| `4096 x 4096` | 4 | 512 | 876.7670 µs | 9.5866 GB/s |
+| `4096 x 11008` | 32 | 1536 | 549.2454 µs | 46.1550 GB/s |
+| `4096 x 11008` | 4 | 1536 | 2418.1856 µs | 10.4195 GB/s |
+| `28672 x 8192` | 32 | 1024 | 2194.6698 µs | 53.5984 GB/s |
+| `28672 x 8192` | 4 | 1024 | 10894.7038 µs | 10.7865 GB/s |
 
+この表は`C_h`をruntime config headerから読む**現行の一般化 kernel**で取り直した最終値である。
 `4096 x 4096`の32-core scalar-state結果は、Phase 1 fixed ELL（512 logical/physical width）の
 277.71 µsとほぼ同水準である。ただし入力seedやkernel/data layoutは同一ではないため、この一点だけから
 fixed ELLとの優劣は結論付けない。`4096 x 11008`はphysical widthが1536であり、1376-width fixed ELLとの
 payload差を含む値である。
+
+#### 2026-09-17 `B_h=8, C_h=2` の一般化 kernel 確認
+
+`C_h`をruntime config headerから読む一般化 kernelで、`B_h=8`（4 core、2 rows/core）と
+`B_h=24`（6 rows/core）のCPU reference一致をNPU2で確認した。`C_h=3`はcoreごとのBF16 yが6 Bとなり、
+ObjectFIFO DMAの4 B境界制約でAIECCが拒否するため、現行契約の探索候補から外す。
+
+`28672 x 8192`、12.5% uniform、1 column/4 core、`B_h=8`の5回平均は **11,377.7222 µs**、
+effective A+config+y bandwidthは **10.3291 GB/s** だった。これは一般化前の`C_h=2`専用entry pointの
+11,233.1918 µsとは別値であり、runtime `C_h` loopを含む現行実装の記録である。
 
 一columnの`M=4096`では、slice loopをPythonで128回展開するとcore programが16 KiBを約16 KiB超過した。
 実装をouter `scf.for`へ変更してprogram sizeをslice数に依存させない形にした後、4 core/32 coreの

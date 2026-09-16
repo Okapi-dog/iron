@@ -566,7 +566,7 @@ def spmv_slice_ell_dynamic_scalar(dev, M, K, total_blocks, trace_size=0, func_pr
 
 
 def spmv_slice_ell_dynamic_scalar_multicol(
-    dev, M, K, blocks_per_column, trace_size=0, func_prefix=""
+    dev, M, K, blocks_per_column, block_height=32, trace_size=0, func_prefix=""
 ):
     """Phase-4 scalar-state Slice-ELL with four core rows in every active column.
 
@@ -574,17 +574,25 @@ def spmv_slice_ell_dynamic_scalar_multicol(
     to column ``c``.  A counts may differ, while the number of y slice objects
     is identical across columns; this preserves the static join/drain contract.
     """
-    rows, block_height, block_width = 4, 32, 256
+    rows, block_width = 4, 256
+    # Each core drains C_h BF16 output elements.  ObjectFIFO DMA requires a
+    # 4-byte transfer, hence C_h must be even (B_h a multiple of eight).
+    if block_height <= 0 or block_height % (rows * 2):
+        raise ValueError("block_height must be a positive multiple of eight")
     core_height = block_height // rows
     blocks_per_column = tuple(int(n) for n in blocks_per_column)
     cols = len(blocks_per_column)
     if not 1 <= cols <= 8 or M <= 0 or M % (block_height * cols) or K <= 0:
-        raise ValueError("cols must be 1..8 and M divisible by 32*cols")
+        raise ValueError("cols must be 1..8 and M divisible by block_height*cols")
     if any(n < 0 for n in blocks_per_column):
         raise ValueError("blocks_per_column entries must be non-negative")
 
     slices_per_column = M // (block_height * cols)
-    config_words = K + slices_per_column
+    # [uint16 C_h | reserved | BF16 x bits K | uint16 p... | optional pad].
+    # The object-FIFO DMA needs a 4-byte transfer length, so pad the config
+    # object to an even number of int16 words.
+    config_words = 2 + K + slices_per_column
+    config_words += config_words % 2
     total_blocks = sum(blocks_per_column)
     dtype = np.dtype[bfloat16]
     config_dtype = np.dtype[np.int16]
@@ -598,15 +606,17 @@ def spmv_slice_ell_dynamic_scalar_multicol(
     l3_y_ty = np.ndarray[(M,), dtype]
 
     init_kernel = Kernel(
-        f"{func_prefix}slice_ell_scalar_state_init", f"{func_prefix}spmv_ell.o", [l1_state_ty]
+        f"{func_prefix}slice_ell_scalar_state_init_runtime", f"{func_prefix}spmv_ell.o",
+        [l1_config_ty, l1_state_ty],
     )
     accumulate_kernel = Kernel(
-        f"{func_prefix}slice_ell_scalar_state_accumulate_bf16",
+        f"{func_prefix}slice_ell_scalar_state_accumulate_bf16_runtime",
         f"{func_prefix}spmv_ell.o",
         [l1_a_ty, l1_config_ty, l1_state_ty],
     )
     finalize_kernel = Kernel(
-        f"{func_prefix}slice_ell_scalar_state_finalize_bf16", f"{func_prefix}spmv_ell.o", [l1_state_ty, l1_y_ty]
+        f"{func_prefix}slice_ell_scalar_state_finalize_bf16_runtime", f"{func_prefix}spmv_ell.o",
+        [l1_config_ty, l1_state_ty, l1_y_ty],
     )
 
     a_cols, config_cols, y_cols, workers = [], [], [], []
@@ -633,15 +643,15 @@ def spmv_slice_ell_dynamic_scalar_multicol(
             def core_body(a_fifo, config_fifo, y_fifo, state_buf, init, accumulate, finalize):
                 config = config_fifo.acquire(1)
                 for local_slice in range_(slices_per_column):
-                    init(state_buf)
-                    p_word = memref.load(config, [arith.addi(index.constant(K), local_slice)])
+                    init(config, state_buf)
+                    p_word = memref.load(config, [arith.addi(index.constant(K + 2), local_slice)])
                     p = index.casts(T.index(), p_word)
                     for _ in range_(p):
                         a = a_fifo.acquire(1)
                         accumulate(a, config, state_buf)
                         a_fifo.release(1)
                     y = y_fifo.acquire(1)
-                    finalize(state_buf, y)
+                    finalize(config, state_buf, y)
                     y_fifo.release(1)
                 config_fifo.release(1)
 
