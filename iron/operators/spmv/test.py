@@ -10,9 +10,9 @@ from iron.operators.spmv.reference import make_uniform_ell, reference_ell
 from iron.operators.spmv.op import SpMVSELL32
 from iron.operators.spmv.op import SpMVSELL32Block
 from iron.operators.spmv.op import SpMVSliceELLStatic
+from iron.operators.spmv.op import SpMVSliceELLDynamicScalar
 from iron.operators.spmv.reference import make_uniform_sell32, reference_sell32, reference_sell32_block
 from iron.operators.spmv.slice_ell import SliceELLConfig, cpu_spmv_slice_ell, csr_to_slice_ell
-
 
 def test_static_ell_1024x2048(aie_context):
     M, K, width = 1024, 2048, 256
@@ -76,6 +76,48 @@ def _make_uniform_slice_ell(M: int, K: int, blocks_per_slice: int, seed: int):
         K=K,
         config=SliceELLConfig(core_rows=4, block_height=32, block_width=256, shim_columns=8),
     )
+
+
+def _make_dynamic_scalar_micro_input():
+    """Four slices whose exact packed control values are p=[0, 1, 4, 2]."""
+    M, K, block_width = 128, 2048, 256
+    ps = [0, 1, 4, 2]
+    row_counts = np.repeat(np.asarray(ps, dtype=np.int64) * block_width, 32)
+    indptr = np.concatenate(([0], np.cumsum(row_counts, dtype=np.int64)))
+    rng = np.random.default_rng(211)
+    indices = rng.integers(0, K, size=int(indptr[-1]), dtype=np.uint16)
+    values = rng.uniform(-1.0, 1.0, size=int(indptr[-1])).astype(np.float32)
+    packed = csr_to_slice_ell(
+        indptr,
+        indices,
+        values,
+        K=K,
+        config=SliceELLConfig(core_rows=4, block_height=32, block_width=256, shim_columns=1),
+    )
+    assert packed.blocks_per_slice.tolist() == ps
+    return packed
+
+
+def test_slice_ell_dynamic_scalar_state_p0142(aie_context):
+    """NPU2 Phase-4 micro test: dynamic acquire count and scalar FP32 L1 state."""
+    packed = _make_dynamic_scalar_micro_input()
+    vector = torch.rand(2048, generator=torch.Generator().manual_seed(212)).to(torch.bfloat16)
+    expected = cpu_spmv_slice_ell(packed, vector)
+    config = torch.empty(2048 + 4, dtype=torch.int16)
+    config[:2048] = vector.view(torch.uint16).view(torch.int16)
+    config[2048:] = torch.from_numpy(packed.blocks_per_slice.astype(np.int16, copy=False))
+    operator = SpMVSliceELLDynamicScalar(
+        M=128, K=2048, total_blocks=int(packed.blocks_per_slice.sum()), context=aie_context
+    )
+    errors, _, _ = run_test(
+        operator,
+        {"packed": packed.packed_a_as_bf16, "config": config},
+        {"output": expected},
+        rel_tol=0.06,
+        abs_tol=1e-3,
+        warmup_iters=1,
+    )
+    assert not errors, errors
 
 
 def test_slice_ell_horizontal_static_p1_1024x2048(aie_context):

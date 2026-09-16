@@ -178,3 +178,44 @@ extern "C" void slice_ell_horizontal_p2_bf16(
   slice_ell_horizontal_impl<2>(a0, a1, x, y);
   event1();
 }
+
+// Phase-4 scalar-state path.  State is deliberately just one FP32 scalar per
+// output row; each block builds a transient 32-lane accumulator, reduces it,
+// and adds the scalar to the core-private L1 state buffer.
+extern "C" void slice_ell_scalar_state_init(float *__restrict state) {
+  AIE_LOOP_UNROLL_FULL
+  for (unsigned row = 0; row < 8; ++row)
+    state[row] = 0.0f;
+}
+
+extern "C" void slice_ell_scalar_state_accumulate_bf16(
+    const bfloat16 *__restrict packed, const int16_t *__restrict config_words,
+    float *__restrict state) {
+  const auto *x = reinterpret_cast<const bfloat16 *>(config_words);
+  for (unsigned row = 0; row < 8; ++row) {
+    const bfloat16 *row_packed = packed + row * 512;
+    const auto *indices = reinterpret_cast<const uint16_t *>(row_packed);
+    const auto *values = row_packed + 256;
+    aie::accum<accfloat, 32> acc = aie::zeros<accfloat, 32>();
+    AIE_PREPARE_FOR_PIPELINING
+    AIE_LOOP_MIN_ITERATION_COUNT(8)
+    for (unsigned slot = 0; slot < 256; slot += 32) {
+      const auto idx = aie::load_v<32>(indices + slot);
+      const auto val = aie::load_v<32>(values + slot);
+      aie::vector<bfloat16, 32> gathered;
+      AIE_LOOP_UNROLL_FULL
+      for (unsigned lane = 0; lane < 32; ++lane)
+        gathered[lane] = x[idx[lane]];
+      acc = aie::mac(acc, val, gathered);
+    }
+    state[row] += aie::reduce_add(acc.template to_vector<float>());
+  }
+}
+
+extern "C" void slice_ell_scalar_state_finalize_bf16(
+    const float *__restrict state, bfloat16 *__restrict y) {
+  ::aie::set_rounding(aie::rounding_mode::conv_even);
+  AIE_LOOP_UNROLL_FULL
+  for (unsigned row = 0; row < 8; ++row)
+    y[row] = static_cast<bfloat16>(state[row]);
+}

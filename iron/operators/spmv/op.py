@@ -277,3 +277,47 @@ class SpMVSliceELLStatic(MLIROperator):
             ),
             vector,
         )
+
+
+@dataclass
+class SpMVSliceELLDynamicScalar(MLIROperator):
+    """Phase-4 one-column dynamic Slice-ELL with FP32 scalar L1 state."""
+
+    M: int
+    K: int
+    total_blocks: int
+    trace_size: int = 0
+    context: object | None = field(default=None, repr=False)
+
+    _name_aliases: ClassVar[dict[str, str]] = {
+        **MLIROperator._name_aliases,
+        "total_blocks": "blocks",
+        "trace_size": "trace",
+    }
+
+    def __post_init__(self) -> None:
+        if self.M <= 0 or self.M % 32 or self.K <= 0 or self.total_blocks < 0:
+            raise ValueError("M must be divisible by 32; K and total_blocks must be valid")
+        if self.trace_size < 0:
+            raise ValueError("trace_size must be non-negative")
+        super().__init__(context=self.context)
+
+    def get_mlir_artifact(self):
+        return PythonGeneratedMLIRArtifact(
+            f"{self.name}.mlir",
+            DesignGenerator(
+                self.operator_dir / "design.py",
+                "spmv_slice_ell_dynamic_scalar",
+                (aie_utils.get_current_device(), self.M, self.K, self.total_blocks, self.trace_size),
+            ),
+        )
+
+    def get_kernel_artifacts(self):
+        return [KernelObjectArtifact("spmv_ell.o", dependencies=[SourceArtifact(self.operator_dir / "spmv.cc")])]
+
+    def get_arg_spec(self):
+        return [
+            AIERuntimeArgSpec("in", (self.total_blocks * 32 * 256 * 2,)),
+            AIERuntimeArgSpec("in", (self.K + self.M // 32,), dtype=np.dtype(np.int16)),
+            AIERuntimeArgSpec("out", (self.M,)),
+        ]
