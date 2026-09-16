@@ -132,3 +132,17 @@ class SpMVSELL32(MLIROperator):
             AIERuntimeArgSpec("in", (self.K,)),
             AIERuntimeArgSpec("out", (self.M,)),
         ]
+
+
+@dataclass
+class SpMVSELL32Block(SpMVSELL32):
+    """SELL-32 with a fixed 16-slot horizontal input object."""
+
+    def get_mlir_artifact(self):
+        return PythonGeneratedMLIRArtifact(
+            f"{self.name}.mlir",
+            DesignGenerator(
+                self.operator_dir / "design.py", "spmv_sell32_block",
+                (aie_utils.get_current_device(), self.M, self.K, self.ell_width, self.rows, self.cols),
+            ),
+        )

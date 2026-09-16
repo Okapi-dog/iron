@@ -39,3 +39,13 @@ def reference_sell32(packed: torch.Tensor, vector: torch.Tensor, M: int, ell_wid
     indices = words[:, :, 0, :].permute(0, 2, 1).to(torch.long)
     values = words[:, :, 1, :].view(torch.int16).view(torch.bfloat16).permute(0, 2, 1).float()
     return (values * vector.float()[indices]).sum(dim=2).reshape(-1).to(torch.bfloat16)
+
+
+def reference_sell32_block(packed: torch.Tensor, vector: torch.Tensor, M: int, ell_width: int):
+    words = packed.contiguous().view(torch.uint16).view(M // 32, ell_width, 2, 32)
+    indices = words[:, :, 0, :].permute(0, 2, 1).to(torch.long)
+    values = words[:, :, 1, :].view(torch.int16).view(torch.bfloat16).permute(0, 2, 1).float()
+    y = torch.zeros((M // 32, 32), dtype=torch.bfloat16)
+    for slot in range(0, ell_width, 16):
+        y = (y.float() + (values[:, :, slot:slot + 16] * vector.float()[indices[:, :, slot:slot + 16]]).sum(dim=2)).to(torch.bfloat16)
+    return y.reshape(-1)

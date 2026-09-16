@@ -74,6 +74,28 @@ pytest -q -s iron/operators/spmv/test.py::test_static_sell32_1024x2048 \
 2026-09-16の実機結果はCPU reference一致（`1 passed`）、NPU execution latency `217.2 us`、
 effective bandwidth `4.855 GB/s`である。これも機能移植のsanity runである。
 
+### SELL-32 block
+
+`SpMVSELL32Block` はSELL-32の物理配置を変えず、横16 slotを一つのA objectとして送る。
+従ってcoreごとのA objectは`32 × 16 × 4 B = 2 KiB`で、depth=2でもL1に余裕がある。各coreは
+32行のy objectを一度acquireし、16 slotずつBF16へ丸めながら更新してから一度だけreleaseする。
+
+```bash
+pytest -q -s iron/operators/spmv/test.py::test_static_sell32_block_1024x2048 \
+  --iterations 1 --csv-output /tmp/phase1_spmv_sell32_block.csv
+```
+
+2026-09-16の単独sanity runはCPU reference一致、NPU execution latency `211.6 us`、effective
+bandwidth `4.985 GB/s`だった。三形式を同一sessionで再実行した結果もすべてPASSで、ELL `166.1 us`、
+SELL-32 `182.8 us`、SELL-32 block `197.4 us`だった。これらは一回ずつのsanity値であり、Phase 0の
+5-sample baselineとは比較しない。
+
+生成した`input_with_addresses.mlir`も確認した。SELL-32 blockはcore A BDが`memref<1024xbf16>`
+（2 KiB）、SELL-32は`memref<16384xbf16>`（32 KiB, depth=1）、ELLは`memref<1024xbf16>`である。
+column内join後のy drain offsetはELLで`0,2,4,6`、SELL-32/blockで`0,32,64,96`となり、いずれも
+4 core-rowの出力を元のrow順で連続している。今回の最小caseのTAP outer iterationは1であり、d3の
+65上限に達しない。大きい行列でのTAP chunking/BD数評価は次の性能評価で行う。
+
 ## 次の順序
 
 1. `design_sell32.py` 相当を最新 `MLIROperator` / `Runtime`へ移し、固定幅SELL-32のjoin/splitと

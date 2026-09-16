@@ -45,3 +45,21 @@ extern "C" void sell32_spmv_bf16(
   }
   aie::store_v(y, acc.template to_vector<bfloat16>());
 }
+
+extern "C" void sell32_block_spmv_bf16(
+    uint32_t block_width, uint32_t reset,
+    const bfloat16 *__restrict packed, const bfloat16 *__restrict x,
+    bfloat16 *__restrict y) {
+  ::aie::set_rounding(aie::rounding_mode::conv_even);
+  aie::accum<accfloat, 32> acc = aie::zeros<accfloat, 32>();
+  if (reset != 0) acc = aie::load_v<32>(y);
+  for (uint32_t slot = 0; slot < block_width; ++slot) {
+    const bfloat16 *slot_base = packed + slot * 64;
+    const auto idx = aie::load_v<32>(reinterpret_cast<const uint16_t *>(slot_base));
+    const auto val = aie::load_v<32>(slot_base + 32);
+    aie::vector<bfloat16, 32> gathered;
+    for (uint32_t lane = 0; lane < 32; ++lane) gathered[lane] = x[idx[lane]];
+    acc = aie::mac(acc, val, gathered);
+  }
+  aie::store_v(y, acc.template to_vector<bfloat16>());
+}
