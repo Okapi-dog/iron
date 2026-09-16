@@ -6,7 +6,7 @@ from ml_dtypes import bfloat16
 
 from aie.dialects.aie import T
 import aie.dialects.index as index
-from aie.dialects import memref
+from aie.dialects import arith, memref
 from aie.helpers.dialects.scf import _for as range_
 from aie.helpers.taplib import TensorAccessPattern
 from aie.iron import Buffer, Kernel, ObjectFifo, Program, Runtime, TaskGroup, Worker
@@ -507,12 +507,12 @@ def spmv_slice_ell_dynamic_scalar(dev, M, K, total_blocks, trace_size=0, func_pr
 
         def core_body(a_fifo, config_fifo, y_fifo, state_buf, init, accumulate, finalize):
             config = config_fifo.acquire(1)
-            # The surrounding slice count is static, while p is data-dependent.
-            # Emit one dynamic ObjectFIFO loop per slice so the config offset is
-            # a compile-time constant and p=0 naturally acquires no A object.
-            for local_slice in range(slices):
+            # Both the slice count and p are MLIR loops.  Keeping the outer
+            # loop compact is essential for one-column M=4096+ benchmarks:
+            # Python-unrolling every slice overflows the 16 KiB program memory.
+            for local_slice in range_(slices):
                 init(state_buf)
-                p_word = memref.load(config, [index.constant(K + local_slice)])
+                p_word = memref.load(config, [arith.addi(index.constant(K), local_slice)])
                 p = index.casts(T.index(), p_word)
                 for _ in range_(p):
                     a = a_fifo.acquire(1)
@@ -632,9 +632,9 @@ def spmv_slice_ell_dynamic_scalar_multicol(
 
             def core_body(a_fifo, config_fifo, y_fifo, state_buf, init, accumulate, finalize):
                 config = config_fifo.acquire(1)
-                for local_slice in range(slices_per_column):
+                for local_slice in range_(slices_per_column):
                     init(state_buf)
-                    p_word = memref.load(config, [index.constant(K + local_slice)])
+                    p_word = memref.load(config, [arith.addi(index.constant(K), local_slice)])
                     p = index.casts(T.index(), p_word)
                     for _ in range_(p):
                         a = a_fifo.acquire(1)

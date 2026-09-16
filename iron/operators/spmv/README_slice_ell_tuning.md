@@ -746,6 +746,42 @@ device-only `result.npu_time` 5 sample平均、min/max/std. dev.、effective A+x
 4-core測定でもslice format、`C_h=8`、`B_w=256`、kernelは同一にし、column数だけを1にする。全32 coreとの
 差はDMA/column並列性ではなく、single-column時のcore側の処理量と固定costを比較するための補助データである。
 
+#### 2026-09-17 Phase 4 scalar-state 実測
+
+`measure_dynamic_scalar.py`で上表のfixed-seed uniform matrixを生成し、warmup 2回後に5回の
+`result.npu_time`を平均した。全32 coreのconfigはcolumnごとにxを複製し、Aはcolumnごとに一つの連続DMAで
+送った。4 coreは同一format / kernelで`cols=1`にしたものである。large shapeの性能測定は、既に通した
+`p=[0,1,4,2]`のCPU-reference integration testを再実行した上で、測定時のhost CPU referenceを省略している。
+
+| shape | cores | physical width | mean latency | effective A+config+y bandwidth |
+|---|---:|---:|---:|---:|
+| `4096 x 4096` | 32 | 512 | 275.1158 µs | 30.7601 GB/s |
+| `4096 x 4096` | 4 | 512 | 873.3352 µs | 9.6243 GB/s |
+| `4096 x 11008` | 32 | 1536 | 549.4140 µs | 46.1408 GB/s |
+| `4096 x 11008` | 4 | 1536 | 2401.7048 µs | 10.4910 GB/s |
+| `28672 x 8192` | 32 | 1024 | 2188.0702 µs | 53.7600 GB/s |
+| `28672 x 8192` | 4 | 1024 | 10820.6308 µs | 10.8604 GB/s |
+
+`4096 x 4096`の32-core scalar-state結果は、Phase 1 fixed ELL（512 logical/physical width）の
+277.71 µsとほぼ同水準である。ただし入力seedやkernel/data layoutは同一ではないため、この一点だけから
+fixed ELLとの優劣は結論付けない。`4096 x 11008`はphysical widthが1536であり、1376-width fixed ELLとの
+payload差を含む値である。
+
+一columnの`M=4096`では、slice loopをPythonで128回展開するとcore programが16 KiBを約16 KiB超過した。
+実装をouter `scf.for`へ変更してprogram sizeをslice数に依存させない形にした後、4 core/32 coreの
+`p=[0,1,4,2]` integration testは10回すべてPASSした。
+
+再現command:
+
+```bash
+source /opt/xilinx/xrt/setup.sh
+source /home/hitoshi/ironenv-mlir-v1.4.3/bin/activate
+cd /home/hitoshi/IRON-mlir-v1.4.3/iron
+python -m pytest operators/spmv/test.py -q \
+  -k "dynamic_scalar_state_p0142 or dynamic_scalar_state_p0142_8col"
+python operators/spmv/measure_dynamic_scalar.py
+```
+
 **通過条件:** `p=[0,1,4,2]`を含む混在分布で、全coreのlock数とA object数が一致し、固定長・行順どおりの
 yがCPU referenceと一致し、timeout/deadlockなしでNPU2実行できること。第一通過実装はFP32 scalar stateを
 L1に保持するものとし、BF16 yのblock RMWは採用しない。
