@@ -101,31 +101,47 @@ Phase 0の旧実装（`devel`）と同じ3 shape、全32 core（4 core-row × 8 
 width=`K/8`（12.5%密度相当）で測った。通常SELL-32はPhase 0の比較対象ではなかったため、
 ここでも **ELL と SELL-32 blockだけ**を表に載せる。
 
-Phase 1の再現コマンドは次である。結果JSONはgitignore対象の
+通常の再現コマンドは次である。結果JSONはgitignore対象の
 `npu_data/phase1_mlir_v1.4.3/full_core_device_only.json`に置く。
 
 ```bash
 python iron/operators/spmv/measure.py
 ```
 
-各sampleは2回warm-up後の1回を採用し、5 sampleのmean/min/max/std. dev.を出す。Phase 1の
-`result.npu_time`とPhase 0の`run_runlist()`戻り値は、いずれもXRTのkernel launchから`wait()`までを
-host側の時計で測る値であり、host側のtensor生成・BO同期を含まない。これはhardware cycle counterでは
-ないが、旧新で同じ範囲である。sample間は4秒idleにした。全6条件でCPU reference一致した。
+Phase 0と保存済みの行列ビット列まで揃える比較には、旧checkoutの `npu_data` を明示する。
 
-| `M × K` | width | kernel | Phase 0 mean | Phase 1 mean | Phase 1 min | Phase 1 max | Phase 1 std. dev. | Phase 1 effective BW | 結果 |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---|
-| `4096 × 4096` | 512 | ELL | 265.13 us | 288.31 us | 278.79 us | 305.60 us | 9.94 us | 29.152 GB/s | PASS |
-| `4096 × 4096` | 512 | SELL-32 block | 261.96 us | 280.22 us | 274.86 us | 288.65 us | 5.45 us | 29.994 GB/s | PASS |
-| `4096 × 11008` | 1376 | ELL | 517.97 us | 525.77 us | 504.28 us | 539.59 us | 14.19 us | 42.936 GB/s | PASS |
-| `4096 × 11008` | 1376 | SELL-32 block | 520.63 us | 513.30 us | 491.78 us | 532.04 us | 16.26 us | 43.979 GB/s | PASS |
-| `28672 × 8192` | 1024 | ELL | 2207.14 us | 2205.59 us | 2193.71 us | 2223.78 us | 10.56 us | 53.280 GB/s | PASS |
-| `28672 × 8192` | 1024 | SELL-32 block | 2182.89 us | 2216.48 us | 2171.57 us | 2276.03 us | 33.68 us | 53.018 GB/s | PASS |
+```bash
+python iron/operators/spmv/measure.py \
+  --legacy-data-root /home/hitoshi/IRON/operators/spmv/npu_data
+```
 
-この表は、旧kernelの性能上重要な構造を復元した後の値である。すなわち32 lane gatherの強制unroll、
-`AIE_PREPARE_FOR_PIPELINING`、最低反復数指定、およびA/x DMAを同じtask groupへ投入する順序を
-旧版と揃えた。したがって3 shapeすべてでPhase 0と概ね同等であり、最新toolchainへの移植は性能上も
-Phase 1の通過条件を満たした。
+`--legacy-data-root` は旧 `*_xdna_ell.npy` / `*_xdna_sell32.npy` の `uint16` 表現を
+BF16 storage bit patternのまま読込む。従ってindexの局所性を含めて同一であり、単に同じ
+`M,K,width` を乱数生成する比較ではない。各sampleは2回warm-up後の1回を採用し、5 sampleの
+mean/min/max/std. dev.を出す。Phase 1の`result.npu_time`とPhase 0の`run_runlist()`戻り値は、
+いずれもXRTのkernel launchから`wait()`までをhost側の時計で測る値で、host側のtensor生成・BO同期を
+含まない。hardware cycle counterではない。全6条件でCPU reference一致した。
+
+| `M × K` | width | kernel | Phase 0 mean | Phase 1 mean | 差分 | Phase 1 min | Phase 1 max | Phase 1 std. dev. | Phase 1 effective BW | 結果 |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `4096 × 4096` | 512 | ELL | 265.13 us | 276.91 us | +4.4% | 262.43 us | 294.25 us | 10.92 us | 30.353 GB/s | PASS |
+| `4096 × 4096` | 512 | SELL-32 block | 261.96 us | 275.99 us | +5.4% | 263.77 us | 282.58 us | 6.40 us | 30.454 GB/s | PASS |
+| `4096 × 11008` | 1376 | ELL | 517.97 us | 518.49 us | +0.1% | 498.82 us | 530.35 us | 10.66 us | 43.539 GB/s | PASS |
+| `4096 × 11008` | 1376 | SELL-32 block | 520.63 us | 524.59 us | +0.8% | 511.59 us | 536.59 us | 7.97 us | 43.032 GB/s | PASS |
+| `28672 × 8192` | 1024 | ELL | 2207.14 us | 2198.66 us | -0.4% | 2188.87 us | 2224.77 us | 13.37 us | 53.448 GB/s | PASS |
+| `28672 × 8192` | 1024 | SELL-32 block | 2182.89 us | 2182.95 us | +0.0% | 2165.17 us | 2190.88 us | 9.34 us | 53.833 GB/s | PASS |
+
+この表は、旧kernelの性能上重要な構造を復元し、同一NPYで測った値である。具体的には32 lane gatherの
+強制unroll、`AIE_PREPARE_FOR_PIPELINING`、最低反復数指定、旧ELLの関数ABI、さらにDMA taskの投入順を
+揃えた。SELL-32 blockについては、d3の64回制限を守る旧方式（A TAPを64 iteration以下へ分割し、
+4 chunkずつtask group化）も復元している。
+
+中・大の4条件は旧値との差が -0.4%〜+0.8% であり、帯域律速のSpMV本体に新版IRON/mlir-aieの
+性能低下は観測されない。一方、`4096 × 4096` は +4〜5%（絶対 +11〜14 us）が残る。ただしこれは
+XRT launch/waitをhost時計で測る値であり、このshapeではsample std. dev. が6〜11 us、別run間の揺れも
+同程度に現れる。旧1.1.3 venvは現在ws007に残っていないため、同一時刻に旧xclbinと新xclbinを交互実行する
+paired testはまだできない。従ってこの小shapeの差を新版toolchainの回帰とは断定しないが、厳密にゼロ差を
+要求する場合はPhase 0の固定venvを再構築し、paired measurementを追加する。
 
 この前に得た590--6533 usの値は、最小kernelを書き直した際に上記のunroll/pipeline指示とDMAの
 同時投入を落とした非等価版の値であり、性能比較から除外する。新版の`result.npu_time`がhost同期を
@@ -133,5 +149,6 @@ Phase 1の通過条件を満たした。
 
 ## 次の順序
 
-Phase 1の静的ELL / SELL-32 / SELL-32 block移植は完了した。次はSlice-ELLのpacker/referenceを
-先に作り、静的slice path、最後にdynamic ObjectFIFOを小さいmatrixで段階的に検証する。
+Phase 1の静的ELL / SELL-32 / SELL-32 block移植は機能面・帯域律速の性能面で完了した。次は
+Slice-ELLのpacker/referenceを先に作り、静的slice path、最後にdynamic ObjectFIFOを小さいmatrixで
+段階的に検証する。小shapeのhost launch/wait差を厳密に詰める場合だけは、その前に上記paired testを行う。

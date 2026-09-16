@@ -29,9 +29,9 @@ def spmv_ell(dev, M, K, ell_width, rows, cols, rows_per_core):
     l3_y_ty = np.ndarray[(M,), dtype]
 
     kernel = Kernel(
-        "sparse_matvec_ell_bf16",
+        "sparse_matvec_vectorized_bf16_bf16",
         "spmv_ell.o",
-        [np.int32, np.int32, l1_a_ty, l1_x_ty, l1_y_ty],
+        [np.int32, np.int32, np.int32, np.int32, l1_a_ty, l1_x_ty, l1_y_ty],
     )
 
     a_cols, x_cols, y_cols, workers = [], [], [], []
@@ -66,7 +66,11 @@ def spmv_ell(dev, M, K, ell_width, rows, cols, rows_per_core):
             for _ in range_(iterations):
                 a = a_fifo.acquire(1)
                 y = y_fifo.acquire(1)
-                spmv_kernel(rows_per_core, ell_width, a, x, y)
+                zero = index.casts(T.i32(), index.constant(0))
+                # Keep the legacy ABI as well as its kernel body.  ``K`` and
+                # ``zero`` are unused by the implementation, but changing the
+                # call ABI can change AIE code generation.
+                spmv_kernel(rows_per_core, K, ell_width, zero, a, x, y)
                 a_fifo.release(1)
                 y_fifo.release(1)
             x_fifo.release(1)
@@ -103,12 +107,14 @@ def spmv_ell(dev, M, K, ell_width, rows, cols, rows_per_core):
     ]
 
     def sequence(A, X, Y, a_prods, x_prods, y_conss):
-        # Match the Phase-0 schedule: submit A and x fills before waiting for
-        # any drain, so the independent Shim DMA channels can overlap them.
+        # Phase 0 submitted all column A/x fills before any output drain.  Do
+        # not fuse drain into the first loop: task construction order affects
+        # the DMA command stream even though the calls share a TaskGroup.
         ta = TaskGroup()
         for col in range(cols):
-            x_prods[col].fill(X, x_tap, group=ta)
             a_prods[col].fill(A, a_taps[col], group=ta)
+            x_prods[col].fill(X, x_tap, group=ta)
+        for col in range(cols):
             y_conss[col].drain(Y, y_taps[col], group=ta, wait=True)
         ta.finish()
 
@@ -174,8 +180,9 @@ def spmv_sell32(dev, M, K, ell_width, rows, cols):
     def sequence(A, X, Y, a_prods, x_prods, y_conss):
         ta = TaskGroup()
         for col in range(cols):
-            x_prods[col].fill(X, x_tap, group=ta)
             a_prods[col].fill(A, a_taps[col], group=ta)
+            x_prods[col].fill(X, x_tap, group=ta)
+        for col in range(cols):
             y_conss[col].drain(Y, y_taps[col], group=ta, wait=True)
         ta.finish()
     runtime = Runtime(sequence, [l3_a_ty, l3_x_ty, l3_y_ty, [f.prod() for f in a_cols], [f.prod() for f in x_cols], [f.cons() for f in y_cols]])
@@ -191,7 +198,11 @@ def spmv_sell32_block(dev, M, K, ell_width, rows, cols):
     l1_x_ty, l1_y_ty = np.ndarray[(K,), dtype], np.ndarray[(32,), dtype]
     l2_a_ty, l2_y_ty = np.ndarray[(rows * 32 * block_width * 2,), dtype], np.ndarray[(rows * 32,), dtype]
     l3_a_ty, l3_x_ty, l3_y_ty = np.ndarray[(M * ell_width * 2,), dtype], np.ndarray[(K,), dtype], np.ndarray[(M,), dtype]
-    kernel = Kernel("sell32_block_spmv_bf16", "spmv_ell.o", [np.int32, np.int32, l1_a_ty, l1_x_ty, l1_y_ty])
+    kernel = Kernel(
+        "sell32_block_spmv_vectorized_bf16_bf16",
+        "spmv_ell.o",
+        [np.int32, np.int32, l1_a_ty, l1_x_ty, l1_y_ty],
+    )
     blocks_per_col = M // (32 * cols); iterations = blocks_per_col // rows; horizontal_blocks = ell_width // block_width
     a_cols, x_cols, y_cols, workers = [], [], [], []
     for col in range(cols):
@@ -219,17 +230,43 @@ def spmv_sell32_block(dev, M, K, ell_width, rows, cols):
     words_per_payload = 32 * block_width * 2
     words_per_row_block = 32 * ell_width * 2
     words_per_time = rows * words_per_row_block
-    a_taps = [TensorAccessPattern(l3_a_ty.__args__[0], col * blocks_per_col * words_per_row_block,
-              [iterations, horizontal_blocks, rows, words_per_payload],
-              [words_per_time, words_per_payload, words_per_row_block, 1]) for col in range(cols)]
+    # A tap's fourth DMA iteration dimension is limited to 64.  Preserve the
+    # Phase-0 workaround: split the time dimension into <=64-iteration taps
+    # and dispatch four chunks per TaskGroup.
+    max_dma_iterations = 64
+    a_taps = []
+    for col in range(cols):
+        base = col * blocks_per_col * words_per_row_block
+        col_taps = []
+        for first in range(0, iterations, max_dma_iterations):
+            chunk_iterations = min(max_dma_iterations, iterations - first)
+            col_taps.append(
+                TensorAccessPattern(
+                    l3_a_ty.__args__[0],
+                    base + first * words_per_time,
+                    [chunk_iterations, horizontal_blocks, rows, words_per_payload],
+                    [words_per_time, words_per_payload, words_per_row_block, 1],
+                )
+            )
+        a_taps.append(col_taps)
     x_tap = TensorAccessPattern(l3_x_ty.__args__[0], 0, [1, 1, 1, K], [0, 0, 0, 1])
     y_taps = [TensorAccessPattern(l3_y_ty.__args__[0], col * blocks_per_col * 32, [1, 1, 1, blocks_per_col * 32], [0, 0, 0, 1]) for col in range(cols)]
     def sequence(A, X, Y, a_prods, x_prods, y_conss):
-        ta = TaskGroup()
+        # The old block design deliberately issued the one-shot x broadcasts
+        # and output drains first, then fed A in bounded batches.  Besides
+        # avoiding a d3>64 BD, this overlaps x/y with the streamed blocks.
+        tg_xy = TaskGroup()
         for col in range(cols):
-            x_prods[col].fill(X, x_tap, group=ta)
-            a_prods[col].fill(A, a_taps[col], group=ta)
-            y_conss[col].drain(Y, y_taps[col], group=ta, wait=True)
-        ta.finish()
+            x_prods[col].fill(X, x_tap, group=tg_xy, wait=False)
+            y_conss[col].drain(Y, y_taps[col], group=tg_xy, wait=True)
+        chunks_per_group = 4
+        for chunk in range(len(a_taps[0])):
+            if chunk % chunks_per_group == 0:
+                tg_a = TaskGroup()
+            for col in range(cols):
+                a_prods[col].fill(A, a_taps[col][chunk], group=tg_a, wait=True)
+            if (chunk + 1) % chunks_per_group == 0 or chunk + 1 == len(a_taps[0]):
+                tg_a.finish()
+        tg_xy.finish()
     runtime = Runtime(sequence, [l3_a_ty, l3_x_ty, l3_y_ty, [f.prod() for f in a_cols], [f.prod() for f in x_cols], [f.cons() for f in y_cols]])
     return Program(dev, runtime, workers=workers).resolve_program()
