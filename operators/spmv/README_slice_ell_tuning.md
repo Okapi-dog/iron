@@ -421,18 +421,19 @@ row nnz を調べ、L1 容量、`B_h` による padding、`B_w` による object
 
 これは toolchain 更新後の性能差と functional regression を識別する基準である。
 
-#### 2026-09-16 の実施結果
+#### 2026-09-16 の指定条件による再baseline
 
-測定開始commitは`fdcddda6c6de64f04831a423b8720f2ce1fd9561`、環境はNPU2、
+operator sourceの測定開始commitは`fdcddda6c6de64f04831a423b8720f2ce1fd9561`、環境はNPU2、
 `mlir-aie==1.1.3`、XRT 2.21.0である。詳細な環境、command、全数値は
-[`README.md` のPhase 0記録](README.md#15-phase-0-baseline-実測2026-09-16devel)を正とする。
+[`README.md`](README.md) の「Phase 0 baseline 実測」を正とする。
 
-- ELLは最小`1024×256`とshape proxyの`4096×4096`、`4096×11008`で参照一致した。
-- `design_sell32.py`と`design_sell32_block.py`は、L1に収まる`1024×1024`で参照一致した。
-  前者は`1024×2048`, width 256ではA ping-pongだけで64 KiBとなりcompile不能だった。
-- 4096系は実modelの重みではなく、同じshapeと12.5%密度を持つ固定seed random ELLである。
-- trace有効ELL buildは`aiecc.py`が5分で完了せず、raw DMA/FIFO traceは**未取得**である。
-  通常実行の性能値とtrace結果を混同せず、Phase 1前に再試行・原因確認する。
+- `4096×4096`、`4096×11008`、`28672×8192`を、各行`K/8` nnzの固定seed random matrix、
+  すなわち12.5%密度のuniform ELLとして生成した。
+- 各shapeについてELLとSELL-32 blockを、4×8の全32 coreでCPU reference一致まで実行した。
+  ELLの`m`は順に8、2、4、SELL-32 blockの`m`は実装上1である。
+- designごと・shapeごとにempty build directoryを用意し、`op.py`のdesign名なしartifact cacheが
+  結果を混ぜないようにした。結果JSON/logは`npu_data/phase0_devel_2026-09-16/rerun_*`に保存した。
+- traceは本Phase 0の要件から外し、採取しない。
 
 ### Phase 1: 最新 toolchain への移行を先に完了する
 

@@ -408,45 +408,35 @@ source /home/hitoshi/IRON/ironenv/bin/activate
 export PYTHONPATH=/home/hitoshi/IRON:${PYTHONPATH}
 ```
 
-下表の `compile` は MLIR生成、AIE kernel compile、`aiecc.py` によるxclbin生成を含む。
-`prepare` はXRT runtime準備、`latency` はwarm-up 2回後のrunlist一回である。全成功ケースは
-CPU reference と `rel_tol=0.04`、`abs_tol=1e-4` で全要素一致した。latencyは単発値であり、
-性能比較の最終値ではない。
+以下だけを正式な性能baselineとする。各shapeは固定seed random matrixで、全行が
+`K/8` 個のnnzを持つため、**行列密度は厳密に12.5%**、`ell_width=K/8`である。同じ論理行列を
+ELLとSELL-32 blockのそれぞれのlayoutへpackし、4 core-row × 8 core-column、すなわち
+**全32 core**を使った。ELLはL1に収まる最大の安全な`m`を、SELL-32 blockは実装上固定の`m=1`を
+使う。
 
-| design | input | `M × K`, ELL width, `m` | compile | prepare | latency | effective BW | 結果 |
-|---|---|---|---:|---:|---:|---:|---|
-| ELL | 固定seed random | `1024 × 256`, 32, 32 | 3.452 s | 0.041 s | 120.5 us | 1.109 GB/s | PASS |
-| ELL | 固定seed random | `1024 × 2048`, 256, 2 | -- | -- | 128.7 us | 8.196 GB/s | PASS（pytest clean run） |
-| ELL | 固定seed random | `4096 × 4096`, 512, 8 | 3.452 s | 0.043 s | 406.0 us | 20.702 GB/s | PASS |
-| ELL | 固定seed random | `4096 × 11008`, 1376, 2 | 3.092 s | 0.045 s | 897.7 us | 25.148 GB/s | PASS |
-| SELL-32 | 固定seed random | `1024 × 1024`, 128, 1 | 3.263 s | 0.040 s | 122.0 us | 4.332 GB/s | PASS |
-| SELL-32 block | 固定seed random | `1024 × 1024`, 128, 1 | 7.006 s | 0.185 s | 164.1 us | 3.219 GB/s | PASS |
+各行はdesignごと・shapeごとに新しいempty build directoryからcompileした。そのため、
+`op.py`の成果物名が`design_name`を含まない既知のcache collisionは起きない。`compile` は
+MLIR生成、AIE kernel compile、`aiecc.py` によるxclbin生成を含む。`prepare` はXRT runtime準備、
+`latency` はwarm-up 2回後のrunlist一回である。全ケースはCPU referenceと
+`rel_tol=0.04`、`abs_tol=1e-4`で全要素一致した。latencyは単発値であり、最終的な統計的性能比較値
+ではない。
 
-`4096 × 4096` と `4096 × 11008` は Llama-2-7B の代表的な**shape**に合わせた
-12.5%密度（`ell_width=K/8`）のランダムELLである。pruning済み実モデルの行ごとのnnz分布を
-使った測定ではないため、Slice-ELLのstorage simulationや実モデル比較の結果と混同しない。
-`4096 × 11008` の入力は次で生成した（`npu_data/` はgitignore対象）。
+| `M × K` | ELL width | kernel | `m` | compile | prepare | latency | effective BW | 結果 |
+|---|---:|---|---:|---:|---:|---:|---:|---|
+| `4096 × 4096` | 512 | ELL | 8 | 6.205 s | 0.178 s | 589.9 us | 14.247 GB/s | PASS |
+| `4096 × 4096` | 512 | SELL-32 block | 1 | 7.622 s | 0.178 s | 392.3 us | 21.427 GB/s | PASS |
+| `4096 × 11008` | 1376 | ELL | 2 | 5.491 s | 0.044 s | 881.9 us | 25.598 GB/s | PASS |
+| `4096 × 11008` | 1376 | SELL-32 block | 1 | 6.035 s | 0.169 s | 1139.7 us | 19.807 GB/s | PASS |
+| `28672 × 8192` | 1024 | ELL | 4 | 5.526 s | 0.052 s | 4115.7 us | 28.553 GB/s | PASS |
+| `28672 × 8192` | 1024 | SELL-32 block | 1 | 5.809 s | 0.055 s | 4120.6 us | 28.519 GB/s | PASS |
 
-```bash
-cd /home/hitoshi/IRON/operators/spmv
-python -c 'from save_sparse_matrix import save; save(output_dir="./npu_data", auto_padding=False, use_random=True, rand_m=4096, rand_k=11008, rand_nnz=1376)'
-```
+この限定したuniform ELL inputでは、4096×4096はSELL-32 block、4096×11008はELLが速く、
+28672×8192はほぼ同速だった。この差だけからformat一般の優劣を結論付けない。実modelの
+unstructured pruning後の不均一な行長、またはSlice-ELLの結果とは別に扱う。
 
-### Phase 0 で確認した制約と未達項目
+traceはユーザ判断によりこのPhase 0の要件から外す。DMA/FIFO traceは採取しない。
 
-- `design_sell32.py` の `1024 × 2048`, ELL width 256, `m=1` はcompile不能だった。
-  coreごとに32 KiBのA objectをdepth 2で置くためAだけで64 KiBを使い、4 KiBのx、stack、
-  yを配置できない。これは現行SELL-32のL1容量境界であり、PASSした1024×1024結果で
-  置き換えてはならない。
-- `op.py`の成果物名には`design_name`が含まれない。同一shape・同一`m`でdesignを切り替えた
-  最初のSELL-32 block実行は、SELL-32のxclbinを再利用してcompileが0.00035秒だったため
-  **無効**と判定した。表のblock結果は別のempty build directoryで再buildしたものだけである。
-- ELL `1024 × 256`, width 32, `m=32` で `trace_ddr_id=3`、trace size 8192 words を
-  有効化した別clean buildを試みたが、`aiecc.py` が5分以内に完了しなかったため中断した。
-  従って本Phase 0では、通常実行の正確性・性能baselineは取得済みだが、解析可能なDMA/FIFO
-  traceは未取得である。trace有効buildの長時間化を、Phase 1へ進む前に再確認する。
-
-再実行用runner、成功・失敗のJSONとlogは、gitignore対象の
-`npu_data/phase0_devel_2026-09-16/`へ保存する。xclbin、MLIR、partial raw traceは
-一時のclean build directoryにのみ置き、いずれの生成物もcommitしない。commit前には
+再実行用runnerと今回のJSON・logは、gitignore対象の
+`npu_data/phase0_devel_2026-09-16/`へ`rerun_*`として保存する。xclbinとMLIRは各一時clean
+build directoryにのみ置き、いずれの生成物もcommitしない。commit前には
 `git status --short --branch`が意図したREADME変更だけであることを確認する。
