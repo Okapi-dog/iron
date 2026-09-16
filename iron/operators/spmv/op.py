@@ -31,12 +31,14 @@ class SpMVELL(MLIROperator):
     rows: int = 4
     cols: int = 8
     rows_per_core: int = 2
+    trace_size: int = 0
     context: object | None = field(default=None, repr=False)
 
     _name_aliases: ClassVar[dict[str, str]] = {
         **MLIROperator._name_aliases,
         "ell_width": "w",
         "rows_per_core": "rpc",
+        "trace_size": "trace",
     }
 
     def __post_init__(self) -> None:
@@ -44,6 +46,8 @@ class SpMVELL(MLIROperator):
             raise ValueError("M, K, and ell_width must be positive")
         if self.rows <= 0 or self.cols <= 0 or self.rows_per_core <= 0:
             raise ValueError("rows, cols, and rows_per_core must be positive")
+        if self.trace_size < 0:
+            raise ValueError("trace_size must be non-negative")
         if self.ell_width % 32:
             raise ValueError("ell_width must be a multiple of the 32-lane kernel")
         block_rows = self.rows * self.cols * self.rows_per_core
@@ -67,6 +71,7 @@ class SpMVELL(MLIROperator):
                     self.rows,
                     self.cols,
                     self.rows_per_core,
+                    self.trace_size,
                 ),
             ),
         )
@@ -103,15 +108,22 @@ class SpMVSELL32(MLIROperator):
     ell_width: int
     rows: int = 4
     cols: int = 8
+    trace_size: int = 0
     context: object | None = field(default=None, repr=False)
 
-    _name_aliases: ClassVar[dict[str, str]] = {**MLIROperator._name_aliases, "ell_width": "w"}
+    _name_aliases: ClassVar[dict[str, str]] = {
+        **MLIROperator._name_aliases,
+        "ell_width": "w",
+        "trace_size": "trace",
+    }
 
     def __post_init__(self) -> None:
         if self.M % (32 * self.rows * self.cols):
             raise ValueError("M must be divisible by 32*rows*cols")
         if self.K % 32 or self.ell_width % 32:
             raise ValueError("K and ell_width must be multiples of 32")
+        if self.trace_size < 0:
+            raise ValueError("trace_size must be non-negative")
         super().__init__(context=self.context)
 
     def get_mlir_artifact(self):
@@ -119,7 +131,15 @@ class SpMVSELL32(MLIROperator):
             f"{self.name}.mlir",
             DesignGenerator(
                 self.operator_dir / "design.py", "spmv_sell32",
-                (aie_utils.get_current_device(), self.M, self.K, self.ell_width, self.rows, self.cols),
+                (
+                    aie_utils.get_current_device(),
+                    self.M,
+                    self.K,
+                    self.ell_width,
+                    self.rows,
+                    self.cols,
+                    self.trace_size,
+                ),
             ),
         )
 
@@ -143,6 +163,14 @@ class SpMVSELL32Block(SpMVSELL32):
             f"{self.name}.mlir",
             DesignGenerator(
                 self.operator_dir / "design.py", "spmv_sell32_block",
-                (aie_utils.get_current_device(), self.M, self.K, self.ell_width, self.rows, self.cols),
+                (
+                    aie_utils.get_current_device(),
+                    self.M,
+                    self.K,
+                    self.ell_width,
+                    self.rows,
+                    self.cols,
+                    self.trace_size,
+                ),
             ),
         )

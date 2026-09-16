@@ -10,9 +10,10 @@ from aie.helpers.dialects.scf import _for as range_
 from aie.helpers.taplib import TensorAccessPattern
 from aie.iron import Kernel, ObjectFifo, Program, Runtime, TaskGroup, Worker
 from aie.iron.device import Tile
+from iron.operators._trace import maybe_enable_trace
 
 
-def spmv_ell(dev, M, K, ell_width, rows, cols, rows_per_core):
+def spmv_ell(dev, M, K, ell_width, rows, cols, rows_per_core, trace_size=0, func_prefix=""):
     """Build the static ELL baseline with contiguous row ownership per column."""
     cores = rows * cols
     assert M % (cores * rows_per_core) == 0
@@ -29,8 +30,8 @@ def spmv_ell(dev, M, K, ell_width, rows, cols, rows_per_core):
     l3_y_ty = np.ndarray[(M,), dtype]
 
     kernel = Kernel(
-        "sparse_matvec_vectorized_bf16_bf16",
-        "spmv_ell.o",
+        f"{func_prefix}sparse_matvec_vectorized_bf16_bf16",
+        f"{func_prefix}spmv_ell.o",
         [np.int32, np.int32, np.int32, np.int32, l1_a_ty, l1_x_ty, l1_y_ty],
     )
 
@@ -129,10 +130,12 @@ def spmv_ell(dev, M, K, ell_width, rows, cols, rows_per_core):
             [fifo.cons() for fifo in y_cols],
         ],
     )
-    return Program(dev, runtime, workers=workers).resolve_program()
+    prog = Program(dev, runtime, workers=workers)
+    maybe_enable_trace(prog, trace_size, workers)
+    return prog.resolve_program()
 
 
-def spmv_sell32(dev, M, K, ell_width, rows, cols):
+def spmv_sell32(dev, M, K, ell_width, rows, cols, trace_size=0, func_prefix=""):
     """Static SELL-32 baseline: one 32-row block per core and FIFO object."""
     assert M % (32 * rows * cols) == 0 and K % 32 == 0 and ell_width % 32 == 0
     dtype = np.dtype[bfloat16]
@@ -144,7 +147,11 @@ def spmv_sell32(dev, M, K, ell_width, rows, cols):
     l3_a_ty = np.ndarray[(M * ell_width * 2,), dtype]
     l3_x_ty = np.ndarray[(K,), dtype]
     l3_y_ty = np.ndarray[(M,), dtype]
-    kernel = Kernel("sell32_spmv_bf16", "spmv_ell.o", [np.int32, l1_a_ty, l1_x_ty, l1_y_ty])
+    kernel = Kernel(
+        f"{func_prefix}sell32_spmv_bf16",
+        f"{func_prefix}spmv_ell.o",
+        [np.int32, l1_a_ty, l1_x_ty, l1_y_ty],
+    )
     blocks_per_column = M // (32 * cols)
     iterations = blocks_per_column // rows
     a_cols, x_cols, y_cols, workers = [], [], [], []
@@ -186,10 +193,12 @@ def spmv_sell32(dev, M, K, ell_width, rows, cols):
             y_conss[col].drain(Y, y_taps[col], group=ta, wait=True)
         ta.finish()
     runtime = Runtime(sequence, [l3_a_ty, l3_x_ty, l3_y_ty, [f.prod() for f in a_cols], [f.prod() for f in x_cols], [f.cons() for f in y_cols]])
-    return Program(dev, runtime, workers=workers).resolve_program()
+    prog = Program(dev, runtime, workers=workers)
+    maybe_enable_trace(prog, trace_size, workers)
+    return prog.resolve_program()
 
 
-def spmv_sell32_block(dev, M, K, ell_width, rows, cols):
+def spmv_sell32_block(dev, M, K, ell_width, rows, cols, trace_size=0, func_prefix=""):
     """SELL-32, streamed as 16-slot horizontal blocks (2 KiB/core A object)."""
     block_width = 16
     assert M % (32 * rows * cols) == 0 and K % 32 == 0 and ell_width % block_width == 0
@@ -199,8 +208,8 @@ def spmv_sell32_block(dev, M, K, ell_width, rows, cols):
     l2_a_ty, l2_y_ty = np.ndarray[(rows * 32 * block_width * 2,), dtype], np.ndarray[(rows * 32,), dtype]
     l3_a_ty, l3_x_ty, l3_y_ty = np.ndarray[(M * ell_width * 2,), dtype], np.ndarray[(K,), dtype], np.ndarray[(M,), dtype]
     kernel = Kernel(
-        "sell32_block_spmv_vectorized_bf16_bf16",
-        "spmv_ell.o",
+        f"{func_prefix}sell32_block_spmv_vectorized_bf16_bf16",
+        f"{func_prefix}spmv_ell.o",
         [np.int32, np.int32, l1_a_ty, l1_x_ty, l1_y_ty],
     )
     blocks_per_col = M // (32 * cols); iterations = blocks_per_col // rows; horizontal_blocks = ell_width // block_width
@@ -269,4 +278,6 @@ def spmv_sell32_block(dev, M, K, ell_width, rows, cols):
                 tg_a.finish()
         tg_xy.finish()
     runtime = Runtime(sequence, [l3_a_ty, l3_x_ty, l3_y_ty, [f.prod() for f in a_cols], [f.prod() for f in x_cols], [f.cons() for f in y_cols]])
-    return Program(dev, runtime, workers=workers).resolve_program()
+    prog = Program(dev, runtime, workers=workers)
+    maybe_enable_trace(prog, trace_size, workers)
+    return prog.resolve_program()

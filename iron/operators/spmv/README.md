@@ -131,6 +131,35 @@ toolchainなら入力は再現する。各sampleは2回warm-up後の1回を採�
 同時投入を落とした非等価版の値であり、性能比較から除外する。新版の`result.npu_time`がhost同期を
 含んだことによる数倍差ではない。
 
+## Hardware trace（Perfetto）
+
+`trace.py` はSpMVを1段だけ含むfull-ELF sequenceとしてbuildし、NPU trace bufferをhostへ回収して
+Perfetto JSONへ変換する。通常の単体xclbin呼出はtrace bufferを受け取れないため、この経路を使う。
+
+```bash
+source /opt/xilinx/xrt/setup.sh
+source /home/hitoshi/ironenv-mlir-v1.4.3/bin/activate
+cd /home/hitoshi/IRON-mlir-v1.4.3
+
+python iron/operators/spmv/trace.py \
+  --kernel ell --trace-size 65536 --trace-tiles 1 \
+  --output-dir outputs/spmv_traces
+```
+
+成功時は `outputs/spmv_traces/spmv_ell_0_op0_SpMVELL_sequence.json` が生成される。これを
+`https://ui.perfetto.dev` へドラッグすれば、DMA port activity、`INSTR_EVENT_0/1`、vector instruction、
+memory/lock stallを時間軸で閲覧できる。trace runnerの既定は1 AIE column・4 coreであり、先頭worker
+（tile `(col=0,row=2)`）をtraceする。2026-09-16のELL `1024 × 2048`, width 256では、128回のkernel呼出、
+各1389 cycles、8968 Perfetto eventsを取得し、CPU referenceとも一致した。
+
+`--cols 8` にすると通常の全32-core配置をtrace用に再buildできるが、現行のdefault event setでは
+trace streamとSpMV DMAがshim/memtile routing資源を競合し、`Unable to find a legal routing` となる。
+これは通常（traceなし）の全32-core実行の制約ではない。全array traceが必要なら、まずport eventを減らした
+trace event set、またはtrace用に空けたroutingを設計する。
+
+`trace_size` はoperator名とartifact名に含まれる。従ってtrace buildは通常の性能測定用xclbinとは別であり、
+`trace_size=0`（既定値）の通常実行へ影響しない。
+
 ## 次の順序
 
 Phase 1の静的ELL / SELL-32 / SELL-32 block移植は機能面・帯域律速の性能面で完了した。次は
