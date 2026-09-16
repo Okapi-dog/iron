@@ -649,51 +649,63 @@ FP32 accumulator stateの両方を実装する工程である。
 | vector lane | 32 lane = 32出力row | 32 lane = 一row内の32 slot | Phase 3と同一 |
 | block数 | 全rowで固定 | 全sliceで固定の静的`p=1/2` | sliceごとのruntime `p=blocks_per_slice[s]` |
 | A FIFO | 固定回数、各callが一block | `acquire(p)`後に一call | `acquire(1)`をruntime回数だけ繰返す |
-| block間のpartial | BF16 `y` をRMW | kernel内のFP32 `acc[C_h]` | L1のFP32 `acc_state[C_h][V]` をRMW |
+| block間のpartial | BF16 `y` をRMW | kernel内のFP32 `acc[C_h]` | **core register内**のFP32 `acc[C_h]` を維持 |
 | y release | 固定width処理後 | sliceごと一回 | `p=0`を含め必ずsliceごと一回 |
 
 この表の最後から二行が実装上の本質である。Phase 4でFP32 stateを使わずBF16 yを使う実装は、
 動的FIFOのlock検証には使えても、Phase 3の横lane Slice-ELL kernelの継続ではない。
 
-#### 4.2 Phase 4のfirst implementation: FP32 vector-state方式
+#### 4.2 Phase 4の第一案: register-resident dynamic loop
 
-各coreにIRONの`Buffer`として、次のcore-private L1 stateを一つ置く。
-
-```text
-acc_state[C_h][V] : float32
-                  = float32[8][32] = 1,024 B/core
-```
-
-sliceの先頭で`init_state(acc_state)`がゼロ化する。dynamic loopでは一つのA objectだけを
-acquireし、`accumulate_block(A, config.x, acc_state)`が各rowのFP32 vectorをload、256 slotsをMAC、
-同じvectorをstoreする。`p`回繰り返した後、`finalize(acc_state, y)`が各32-lane vectorを一度だけ
-`reduce_add`してBF16 yへ書く。
+指すべき設計は、ユーザーが述べた通りである。同じcoreは同じsliceのA blockを順番に受けるので、
+`acc[0]..acc[7]`をAIE-ML v2の1024-bit accumulator registerに置いたまま、p個のblockを連続してMACする。
+`p`はconfigに既にあるため、A payloadごとの`is_last` headerは第一案には不要である。
 
 ```text
 config = acquire(x_and_p_table)                 # jobあたり一回
-for local_s in assigned_slices:                  # 回数は静的
-  p = load_i16(config, K + local_s)              # runtime uint16 control
-  init_state(acc_state)                          # float32[8][32] = 0
-  for i in range_(p):                            # runtime trip count
-    A = acquire(1)                               # 固定サイズ C_h x B_w block
-    accumulate_block(A, config, acc_state)       # FP32 vector stateをRMW
+for local_s in assigned_slices:                  # slice数は静的
+  p = load_u16(config, K + local_s)              # runtime control
+  acc[0..C_h-1] = fp32_vector_zero(V)            # register上の32-lane accumulators
+  for i in range_(p), iter_args=(acc[0], ..., acc[C_h-1]):
+    A = acquire(1)                               # 次の同一sliceのC_h x B_w block
+    acc' = horizontal_mac(A, config.x, acc)      # register -> MAC -> register
     release(A)
   y = acquire(1)
-  finalize(acc_state, y)                         # p=0なら8個の+0を出力
-  release(y)                                    # 常に一回
+  y[row] = bf16(reduce_add(acc[row]))            # 各row一回だけ
+  release(y)                                     # p=0でも一回
 release(config)
 ```
 
-`acc_state`をregisterに残すPhase 3より、blockごとに1 KiB load + 1 KiB storeが増える。
-これは意図しないcompiler spillではなく、runtime `p`でFIFOを一objectずつ取得するために明示する
-正しさ優先のstate transportである。L1見積りにはA ping-pong 16 KiB、`K=11008`のconfig約22 KiB、
-state 1 KiB、stack 2 KiBを足しても約41 KiB+固定stateであり、first parameterでは余裕がある。
+ここで重要なのは、通常の外部C++ `Kernel(A, x, y)`をblockごとにcallしてはいけないことである。
+そのfunction内のlocal `aie::accum`はcallから戻れば生存しない。Phase 3ではp個のA pointerを一callへ
+渡すことで回避したが、runtime pではそのABIは作れない。Phase 4の第一案では、Worker内の`scf.for`が
+`acc[0..7]`をSSA loop-carried valueとして持つように、AIE vector/accumulator operationをcore MLIRへ
+直接emitする、または同等にaccumulator値をcore内へinlineした形で表現する。これによりObjectFIFOの
+`acquire(1)/release(1)`とMAC loopが同じcore functionにあり、register allocationの対象になる。
 
-比較用のB案は`float32[C_h]`だけをstateにし、各blockで32-lane `reduce_add`をしてscalarへ加える。
-state trafficは32 B/blockまで減るが、reduceが`p×C_h`回となる。これはPhase 4の正しさ通過後に
-同じmatrix・同じp分布で測る性能比較であり、first implementationへ混ぜない。
+この方式が本当にaccumulator registerに割り付くかは仮定しない。生成LLVM/assemblyでp-loop内部に
+accumulatorのL1 load/storeがないこと、stack/L1 layoutが収まること、p=1/2 static caseと数値が一致することを
+通過条件にする。`cm` 16本のうち8本を使うというアーキテクチャ上の余地はあるが、gather用vectorやcompiler
+temporaryを含む実際のallocationは生成物で判定する。
 
-#### 4.3 config、DMA、ObjectFIFOの具体的な責務
+#### 4.3 fallback と比較案
+
+もし現行IRON/MLIR-AIE APIでdynamic ObjectFIFO loopとloop-carried accumulator SSAを合法にlowerできない、
+または生成コードがL1 spillを避けられない場合だけ、次の**fallback**を使う。
+
+```text
+acc_state[C_h][V] : float32 = float32[8][32] = 1,024 B/core
+```
+
+このfallbackではblockごとにFP32 vector stateをL1へstore/loadするため、Phase 3より1 KiB read +
+1 KiB write/blockが増える。数値の正しさは保てるが、Slice-ELLの本命実装とは扱わず、register-resident版との
+性能差を必ず記録する。
+
+別の比較案は`float32[C_h]`だけをstateにし、各blockで32-lane `reduce_add`をしてscalarへ加える方式である。
+state trafficは32 B/blockまで減るが、reduceが`p×C_h`回となる。これはregister-resident第一案とL1-vector
+fallbackの成立後に、同じmatrix・同じp分布で比較する。
+
+#### 4.4 config、DMA、ObjectFIFOの具体的な責務
 
 configは第三のcontrol DMAを作らず、各Shim columnで一つだけ送るraw 16-bit objectとする。
 
@@ -715,28 +727,31 @@ Runtimeはcolumnごとに`sum_s p[s]`個の固定長A objectを**一つの連続
 core別p、slice境界を越えたA取得、あるいは「最後のcoreだけyを返す」は禁止する。いずれもMemTile joinの
 lock順序を壊し、deadlockまたはrow順破壊になる。
 
-#### 4.4 段階的な実装と確認項目
+#### 4.5 段階的な実装と確認項目
 
-1. **lowering probe:** `R=4, cols=1`、`B_h=32, C_h=8, B_w=256`、4 sliceの
-   `p=[0,1,4,2]`を用意する。config wordのloadをupper boundとする`scf.for`内に
-   `A.acquire(1)/release(1)`を置き、`--dynamic-objFifos`でlowerできることをまず確認する。
-   ここではgenerated MLIRにruntime trip countのloop、対応するlock acquire/releaseが出ることを確認する。
-2. **functional micro-test:** 上記へ`acc_state`、`init/accumulate/finalize` kernel、4-core join、
-   固定長y drainを追加する。`p=0`のゼロ出力、pの異なるslice、padding index=0、全128 rowの
-   packed CPU reference一致を確認する。Phase 3のstatic p=1/2と同じ結果になるuniform caseも入れる。
-3. **deadlock / DMA audit:** timeout付き実行を繰り返し、各coreのA object総数が
+1. **register-residency lowering probe:** `R=4, cols=1`、`B_h=32, C_h=8, B_w=256`、4 sliceの
+   `p=[0,1,4,2]`を用意する。config wordをupper boundとする`scf.for`へ`A.acquire(1)/release(1)`と
+   8本のloop-carried accumulatorを置き、`--dynamic-objFifos`でlowerする。generated MLIRにruntime
+   trip countのloopと対応lockがあり、生成assemblyのloop内にaccumulator spillがないことを確認する。
+2. **functional micro-test:** 上記へ横lane MAC、4-core join、固定長y drainを追加する。`p=0`のゼロ出力、
+   pの異なるslice、padding index=0、全128 rowのpacked CPU reference一致を確認する。Phase 3のstatic
+   p=1/2と同じ結果になるuniform caseも入れる。
+3. **fallback decision gate:** 1--2がAPI/loweringの制約またはregister spillで失敗した場合だけ、
+   FP32 vector-state L1 fallbackを別designとして実装する。fallbackを第一案へすり替えず、失敗した
+   lowering理由、追加L1 traffic、latencyを記録する。
+4. **deadlock / DMA audit:** timeout付き実行を繰り返し、各coreのA object総数が
    `sum_s p[s]`、y object総数が`N_local_slice`であることを確認する。Shim MM2SはAとconfigの2本だけ、
    yはS2MM一つだけであること、p=0でdummy A DMAがないことをgenerated MLIRとDMA BD chainで検査する。
-4. **8-column integration:** 同じp分布を8 columnへ連続slice rangeとして配置する。columnごとの
+5. **8-column integration:** 同じp分布を8 columnへ連続slice rangeとして配置する。columnごとの
    `sum_s p[s]`は異なってよいが、config object長とy drain回数は共通に保つ。A fillはcolumnごとに
    連続一taskとし、d3=65制限を回避するためsliceごとのtaskや巨大なrepeat TAPを導入しない。
-5. **数値・資源確認:** `acc_state`がFP32のままblock間で保存され、BF16 yへはfinalizeだけで変換される
+6. **数値・資源確認:** accumulatorがblock間でFP32のまま保持され、BF16 yへはfinalizeだけで変換される
    ことをCPU referenceとgenerated kernelから確認する。L1 layout、stack、BD数、program memory、
-   runtime latencyを記録する。ここで初めてB案との性能比較へ進む。
+   runtime latencyを記録する。ここで初めてfallback/B案との性能比較へ進む。
 
 **通過条件:** `p=[0,1,4,2]`を含む混在分布で、全coreのlock数とA object数が一致し、固定長・行順どおりの
-yがCPU referenceと一致し、timeout/deadlockなしでNPU2実行できること。FP32 vector-stateを通らずBF16 yを
-blockごとにRMWするものは、このPhaseの通過実装とは数えない。
+yがCPU referenceと一致し、timeout/deadlockなしでNPU2実行できること。第一通過実装はFP32 accumulatorを
+registerに保持するものとし、BF16 yのblock RMWやL1-vector state fallbackは代替測定として明示的に区別する。
 
 ### Phase 5（後続）: 実 model layer と tuning
 
