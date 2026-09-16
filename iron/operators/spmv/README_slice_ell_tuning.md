@@ -632,18 +632,111 @@ latency比較と、必要時の生成命令確認を次に行う。
 `[slice][block][core][row]` A split、4-core join/drainが、全32 coreの通常サイズで約30 GB/sに
 到達することは確認できた。
 
-### Phase 4: dynamic `blocks_per_slice[s]` を四 core micro-test で検証する
+### Phase 4: dynamic `blocks_per_slice[s]` を横lane kernelへ接続する
 
-1. `blocks_per_slice=[0,1,4,2]` のように全ゼロ slice と異なる長さを混在させる小さな matrix を使う。
-2. xとcontrol表を含む一つの固定長config objectを四coreへbroadcastし、そこからpを読む。
-   `for i in range(p)` のdynamic A acquire/releaseと、sliceごと一回のy releaseを
-   `--dynamic-objFifos`でlowerする。
-3. column当たりのShim MM2SがAとconfigのちょうど2本であり、独立control DMAが生成されない
-   ことを生成MLIRで確認する。
-4. timeout/deadlock、出力順、全coreのacquire/release数、生成BD/lockを検査する。
+Phase 3の`p=1/p=2` kernelをそのままloopに置くだけでは正しくない。Phase 3では
+`acquire(p)`で得たp個のA objectを**一回の静的kernel ABI**へ渡し、`acc[0..7]`をregisterに
+保持した。一方Phase 4の`p`はconfigから実行時に読む値であり、C++ functionの引数個数にはできない。
+また旧SELL-32-blockのようにblockごとにBF16 yをread/modify/writeすると、横lane方式の
+「slice末尾で一度だけreduce/BF16化」という数値仕様を失う。したがってPhase 4は、可変FIFO制御と
+FP32 accumulator stateの両方を実装する工程である。
 
-**通過条件:** `blocks_per_slice[s]` の分布にかかわらず、y の長さ・順序が固定で、CPU reference と一致し、
-deadlock しないこと。ここが Slice-ELL 固有の最大リスクである。
+#### 4.1 Phase 3から何が変わるか
+
+| 項目 | Phase 1 の SELL-32 block | Phase 3 static Slice-ELL | Phase 4 dynamic Slice-ELL |
+|---|---|---|---|
+| A layout | `[slot][index/value][32 rows]` | `[slice][block][core][row][idx][value]` | Phase 3と同一 |
+| vector lane | 32 lane = 32出力row | 32 lane = 一row内の32 slot | Phase 3と同一 |
+| block数 | 全rowで固定 | 全sliceで固定の静的`p=1/2` | sliceごとのruntime `p=blocks_per_slice[s]` |
+| A FIFO | 固定回数、各callが一block | `acquire(p)`後に一call | `acquire(1)`をruntime回数だけ繰返す |
+| block間のpartial | BF16 `y` をRMW | kernel内のFP32 `acc[C_h]` | L1のFP32 `acc_state[C_h][V]` をRMW |
+| y release | 固定width処理後 | sliceごと一回 | `p=0`を含め必ずsliceごと一回 |
+
+この表の最後から二行が実装上の本質である。Phase 4でFP32 stateを使わずBF16 yを使う実装は、
+動的FIFOのlock検証には使えても、Phase 3の横lane Slice-ELL kernelの継続ではない。
+
+#### 4.2 Phase 4のfirst implementation: FP32 vector-state方式
+
+各coreにIRONの`Buffer`として、次のcore-private L1 stateを一つ置く。
+
+```text
+acc_state[C_h][V] : float32
+                  = float32[8][32] = 1,024 B/core
+```
+
+sliceの先頭で`init_state(acc_state)`がゼロ化する。dynamic loopでは一つのA objectだけを
+acquireし、`accumulate_block(A, config.x, acc_state)`が各rowのFP32 vectorをload、256 slotsをMAC、
+同じvectorをstoreする。`p`回繰り返した後、`finalize(acc_state, y)`が各32-lane vectorを一度だけ
+`reduce_add`してBF16 yへ書く。
+
+```text
+config = acquire(x_and_p_table)                 # jobあたり一回
+for local_s in assigned_slices:                  # 回数は静的
+  p = load_i16(config, K + local_s)              # runtime uint16 control
+  init_state(acc_state)                          # float32[8][32] = 0
+  for i in range_(p):                            # runtime trip count
+    A = acquire(1)                               # 固定サイズ C_h x B_w block
+    accumulate_block(A, config, acc_state)       # FP32 vector stateをRMW
+    release(A)
+  y = acquire(1)
+  finalize(acc_state, y)                         # p=0なら8個の+0を出力
+  release(y)                                    # 常に一回
+release(config)
+```
+
+`acc_state`をregisterに残すPhase 3より、blockごとに1 KiB load + 1 KiB storeが増える。
+これは意図しないcompiler spillではなく、runtime `p`でFIFOを一objectずつ取得するために明示する
+正しさ優先のstate transportである。L1見積りにはA ping-pong 16 KiB、`K=11008`のconfig約22 KiB、
+state 1 KiB、stack 2 KiBを足しても約41 KiB+固定stateであり、first parameterでは余裕がある。
+
+比較用のB案は`float32[C_h]`だけをstateにし、各blockで32-lane `reduce_add`をしてscalarへ加える。
+state trafficは32 B/blockまで減るが、reduceが`p×C_h`回となる。これはPhase 4の正しさ通過後に
+同じmatrix・同じp分布で測る性能比較であり、first implementationへ混ぜない。
+
+#### 4.3 config、DMA、ObjectFIFOの具体的な責務
+
+configは第三のcontrol DMAを作らず、各Shim columnで一つだけ送るraw 16-bit objectとする。
+
+```text
+[ BF16 x[0:K] のraw bits | uint16 p[0:N_local_slice] | 64 B alignment padding ]
+```
+
+Workerがpを整数として読む必要があるため、device側のconfig object型は`int16`/`uint16` wordにする。
+kernelは先頭K wordだけを`bfloat16*`へreinterpretしてxとして使う。host側では全columnを同じ
+`config_words`へpadし、pの有効範囲と`0 <= p <= uint16_max`をpack前に検証する。
+
+Aはsliceごとのhost DMA taskに分けない。Phase 2の順序
+`[slice][block][core][row][idx][value]`は、column内ではA block objectの連続streamである。
+Runtimeはcolumnごとに`sum_s p[s]`個の固定長A objectを**一つの連続fill**で送り、MemTileは各objectを
+4 coreへsplitする。`p=0` sliceはstreamにA objectを一つも持たない。yはpと無関係に
+`N_local_slice`個の固定長slice objectをdrainするため、join/drain TAPは静的のままである。
+
+各sliceでは四coreが同じpを読み、同じ回数Aをacquire/releaseしてから同時にyをreleaseする。
+core別p、slice境界を越えたA取得、あるいは「最後のcoreだけyを返す」は禁止する。いずれもMemTile joinの
+lock順序を壊し、deadlockまたはrow順破壊になる。
+
+#### 4.4 段階的な実装と確認項目
+
+1. **lowering probe:** `R=4, cols=1`、`B_h=32, C_h=8, B_w=256`、4 sliceの
+   `p=[0,1,4,2]`を用意する。config wordのloadをupper boundとする`scf.for`内に
+   `A.acquire(1)/release(1)`を置き、`--dynamic-objFifos`でlowerできることをまず確認する。
+   ここではgenerated MLIRにruntime trip countのloop、対応するlock acquire/releaseが出ることを確認する。
+2. **functional micro-test:** 上記へ`acc_state`、`init/accumulate/finalize` kernel、4-core join、
+   固定長y drainを追加する。`p=0`のゼロ出力、pの異なるslice、padding index=0、全128 rowの
+   packed CPU reference一致を確認する。Phase 3のstatic p=1/2と同じ結果になるuniform caseも入れる。
+3. **deadlock / DMA audit:** timeout付き実行を繰り返し、各coreのA object総数が
+   `sum_s p[s]`、y object総数が`N_local_slice`であることを確認する。Shim MM2SはAとconfigの2本だけ、
+   yはS2MM一つだけであること、p=0でdummy A DMAがないことをgenerated MLIRとDMA BD chainで検査する。
+4. **8-column integration:** 同じp分布を8 columnへ連続slice rangeとして配置する。columnごとの
+   `sum_s p[s]`は異なってよいが、config object長とy drain回数は共通に保つ。A fillはcolumnごとに
+   連続一taskとし、d3=65制限を回避するためsliceごとのtaskや巨大なrepeat TAPを導入しない。
+5. **数値・資源確認:** `acc_state`がFP32のままblock間で保存され、BF16 yへはfinalizeだけで変換される
+   ことをCPU referenceとgenerated kernelから確認する。L1 layout、stack、BD数、program memory、
+   runtime latencyを記録する。ここで初めてB案との性能比較へ進む。
+
+**通過条件:** `p=[0,1,4,2]`を含む混在分布で、全coreのlock数とA object数が一致し、固定長・行順どおりの
+yがCPU referenceと一致し、timeout/deadlockなしでNPU2実行できること。FP32 vector-stateを通らずBF16 yを
+blockごとにRMWするものは、このPhaseの通過実装とは数えない。
 
 ### Phase 5（後続）: 実 model layer と tuning
 
