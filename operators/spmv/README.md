@@ -28,7 +28,7 @@ Version: 1.1.3
 
 ```text
 Git branch : devel
-Git commit : 7c210b788df7c000aeda4322d1beac93498749fb
+Git commit (Phase 0測定開始時) : fdcddda6c6de64f04831a423b8720f2ce1fd9561
 Device     : NPU2
 Format     : ELL
 M          : 1024
@@ -320,3 +320,132 @@ pytest の PASS/FAIL
 latency と bandwidth
 CSV出力先
 ```
+
+## 14. branch と再現環境の記録方針
+
+この作業では Git tag は使わず、各 branch の `operators/spmv/README.md` を再現実験の
+正とする。ws007 の現行 branch 名は **`devel`** である（`develop` ではない）。新しい
+branch は、必ず前段の通過 commit から作る。
+
+```text
+devel
+  Phase 0: 現行 toolchain の baseline を commit / push
+  └─ spmv/mlir-v1.4.3
+       Phase 1: 最新 upstream を clean に構築し、最新 operator 構造へ SpMV を移植。
+                ELL, sell32, sell32_block を再現
+       └─ spmv/slice-ell
+            Phase 2--5: packer/reference, static Slice-ELL, dynamic p_g, 実機評価
+```
+
+`spmv/mlir-v1.4.3` では旧 checkout を in-place 更新しない。最新 AMD IRON / mlir-aie を
+別 checkout と venv に clean に構築し、upstream の既存 NPU2 operator で環境成立を確認する。
+その後、旧 `devel` の SpMV を参照元として、最新 upstream の他 operator の構造に合わせて
+`operators/spmv` を組み直す。古い `op.py` や artifact/cache の構造をそのまま複製せず、
+まず固定幅 ELL、次に sell32、sell32_block を順に再現する。`spmv/slice-ell` は、その
+確認済み commit を親にして継続的に実装する branch とする。実験的な試行が必要な場合だけ、
+`spmv/slice-ell` から一時 branch を切る。
+
+### 各 branch で最初に記録する項目
+
+環境を作った直後と、測定結果を出す直前に次を README の「現在確認済みの構成」へ実値で
+追記する。branch 名から toolchain の正確な build 番号を推測してはならない。
+
+```bash
+cd /path/to/IRON
+git branch --show-current
+git rev-parse HEAD
+git status --short --branch
+
+source /opt/xilinx/xrt/setup.sh
+source /path/to/venv/bin/activate
+python --version
+python -m pip show mlir-aie
+python -m pip show iron
+which aiecc.py
+```
+
+README には少なくとも次を残す。
+
+```text
+IRON checkout / commit
+mlir-aie version（wheel の完全な Version）
+llvm-aie / Peano version または commit
+XRT version と setup.sh の path
+Python / virtual environment path
+device type と実行 host
+design_name、input format、M/K/ELL width/h/B/R
+build command、test command、測定 command
+clean build か artifact cache 再利用か
+CPU reference の PASS/FAIL と許容誤差
+```
+
+Phase 0 では既存の `devel` に、baseline の再現手順・既知の測定結果・この README を
+commit/push する。`npu_data/`、`build/`、xclbin、trace、CSV などの生成物は commit
+しない。Phase 1 と Phase 2 以降では、環境または format が変わるごとに同じ README の
+該当節を更新し、実際に実行したコマンドを残す。
+
+## 15. Phase 0 baseline 実測（2026-09-16、`devel`）
+
+Phase 1 の移植前比較用として、ws007 の NPU2 で既存実装を隔離した clean build
+directory から実行した。測定開始時のIRON commitは
+`fdcddda6c6de64f04831a423b8720f2ce1fd9561`、branchは`devel`である。環境は
+Python 3.12.3、`mlir-aie==1.1.3`、`/opt/xilinx/xrt/setup.sh`、
+`/home/hitoshi/IRON/ironenv`である。`iron` は独立したpip packageではなく、この環境では
+`mlir-aie`が提供する`aie.iron` APIを使用する。
+
+```text
+aiecc.py  : 19cce64c85c3f22bf4908819b1038a5c0ae42f52
+llvm-aie  : clang 20.0.0, ae321ba3819b3575d63c3173993104fe532d692c
+XRT       : 2.21.0
+device    : AMD Ryzen AI 9 HX 370 / NPU Strix
+NPU FW    : 1.1.2.64
+```
+実行時には必ず次のように、XRT が設定した Python path を残す。
+
+```bash
+source /opt/xilinx/xrt/setup.sh
+source /home/hitoshi/IRON/ironenv/bin/activate
+export PYTHONPATH=/home/hitoshi/IRON:${PYTHONPATH}
+```
+
+下表の `compile` は MLIR生成、AIE kernel compile、`aiecc.py` によるxclbin生成を含む。
+`prepare` はXRT runtime準備、`latency` はwarm-up 2回後のrunlist一回である。全成功ケースは
+CPU reference と `rel_tol=0.04`、`abs_tol=1e-4` で全要素一致した。latencyは単発値であり、
+性能比較の最終値ではない。
+
+| design | input | `M × K`, ELL width, `m` | compile | prepare | latency | effective BW | 結果 |
+|---|---|---|---:|---:|---:|---:|---|
+| ELL | 固定seed random | `1024 × 256`, 32, 32 | 3.452 s | 0.041 s | 120.5 us | 1.109 GB/s | PASS |
+| ELL | 固定seed random | `1024 × 2048`, 256, 2 | -- | -- | 128.7 us | 8.196 GB/s | PASS（pytest clean run） |
+| ELL | 固定seed random | `4096 × 4096`, 512, 8 | 3.452 s | 0.043 s | 406.0 us | 20.702 GB/s | PASS |
+| ELL | 固定seed random | `4096 × 11008`, 1376, 2 | 3.092 s | 0.045 s | 897.7 us | 25.148 GB/s | PASS |
+| SELL-32 | 固定seed random | `1024 × 1024`, 128, 1 | 3.263 s | 0.040 s | 122.0 us | 4.332 GB/s | PASS |
+| SELL-32 block | 固定seed random | `1024 × 1024`, 128, 1 | 7.006 s | 0.185 s | 164.1 us | 3.219 GB/s | PASS |
+
+`4096 × 4096` と `4096 × 11008` は Llama-2-7B の代表的な**shape**に合わせた
+12.5%密度（`ell_width=K/8`）のランダムELLである。pruning済み実モデルの行ごとのnnz分布を
+使った測定ではないため、Slice-ELLのstorage simulationや実モデル比較の結果と混同しない。
+`4096 × 11008` の入力は次で生成した（`npu_data/` はgitignore対象）。
+
+```bash
+cd /home/hitoshi/IRON/operators/spmv
+python -c 'from save_sparse_matrix import save; save(output_dir="./npu_data", auto_padding=False, use_random=True, rand_m=4096, rand_k=11008, rand_nnz=1376)'
+```
+
+### Phase 0 で確認した制約と未達項目
+
+- `design_sell32.py` の `1024 × 2048`, ELL width 256, `m=1` はcompile不能だった。
+  coreごとに32 KiBのA objectをdepth 2で置くためAだけで64 KiBを使い、4 KiBのx、stack、
+  yを配置できない。これは現行SELL-32のL1容量境界であり、PASSした1024×1024結果で
+  置き換えてはならない。
+- `op.py`の成果物名には`design_name`が含まれない。同一shape・同一`m`でdesignを切り替えた
+  最初のSELL-32 block実行は、SELL-32のxclbinを再利用してcompileが0.00035秒だったため
+  **無効**と判定した。表のblock結果は別のempty build directoryで再buildしたものだけである。
+- ELL `1024 × 256`, width 32, `m=32` で `trace_ddr_id=3`、trace size 8192 words を
+  有効化した別clean buildを試みたが、`aiecc.py` が5分以内に完了しなかったため中断した。
+  従って本Phase 0では、通常実行の正確性・性能baselineは取得済みだが、解析可能なDMA/FIFO
+  traceは未取得である。trace有効buildの長時間化を、Phase 1へ進む前に再確認する。
+
+この表のJSON、log、xclbin、MLIR、raw traceは一時のclean build directoryにのみ置き、
+commitしない。commit前には`git status --short --branch`が意図したREADME変更だけであることを
+確認する。
