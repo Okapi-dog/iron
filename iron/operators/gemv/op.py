@@ -27,6 +27,7 @@ class GEMV(MLIROperator):
     tile_size_input: int = 2
     tile_size_output: int | None = None
     num_batches: int = 1
+    a_fifo_depth: int = 2
     kernel_vector_size: int = field(default=64, repr=False)
     # Optional fused activation applied to each output tile in the producing core.
     # "none" (default) leaves the output unchanged; "gelu" applies GELU(tanh approx).
@@ -40,6 +41,7 @@ class GEMV(MLIROperator):
         "tile_size_input": "tsi",
         "tile_size_output": "tso",
         "num_batches": "batch",
+        "a_fifo_depth": "afd",
     }
 
     def __post_init__(self):
@@ -55,6 +57,8 @@ class GEMV(MLIROperator):
             self.K >= self.kernel_vector_size and self.K % self.kernel_vector_size == 0
         ):
             raise ValueError("K must be multiple of kernel_vector_size")
+        if self.a_fifo_depth < 1:
+            raise ValueError("a_fifo_depth must be positive")
         if self.epilogue not in ("none", "gelu"):
             raise ValueError(
                 f"unknown epilogue {self.epilogue!r} (expected 'none' or 'gelu')"
@@ -106,6 +110,7 @@ class GEMV(MLIROperator):
                     "verbose": mlir_verbose,
                     "kernel_object": self._kernel_link_file,
                     "epilogue": self.epilogue,
+                    "a_fifo_depth": self.a_fifo_depth,
                 },
             ),
         )

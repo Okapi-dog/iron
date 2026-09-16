@@ -33,6 +33,7 @@ def my_matvec(
     m_input,
     m_output=None,
     num_batches=1,
+    a_fifo_depth=2,
     kernel_object="mv.o",
     func_prefix="",
     verbose=False,
@@ -63,6 +64,7 @@ def my_matvec(
     dtype_out_str = "bf16"
 
     assert M % cols == 0
+    assert a_fifo_depth >= 1
 
     L1_A_ty = np.ndarray[
         (
@@ -102,7 +104,7 @@ def my_matvec(
         )
 
     A_L3L1_fifos = [
-        ObjectFifo(L1_A_ty, name=f"A_L3L1_{i}", depth=2) for i in range(cols)
+        ObjectFifo(L1_A_ty, name=f"A_L3L1_{i}", depth=a_fifo_depth) for i in range(cols)
     ]
     B_L3L1_fifos = [
         ObjectFifo(L1_B_ty, name=f"B_L3L1_{i}", depth=1) for i in range(cols)
