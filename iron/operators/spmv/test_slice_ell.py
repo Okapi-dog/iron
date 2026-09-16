@@ -1,0 +1,68 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+import json
+
+import numpy as np
+import torch
+
+from iron.operators.spmv.slice_ell import (
+    SliceELLConfig,
+    make_packed_config,
+    pack_csr,
+    reference_csr,
+    reference_slice_ell,
+)
+
+
+def _csr(row_counts, K=97):
+    indptr = np.zeros(len(row_counts) + 1, dtype=np.int64)
+    indptr[1:] = np.cumsum(row_counts)
+    rng = np.random.default_rng(91)
+    indices = rng.integers(0, K, size=int(indptr[-1]), dtype=np.int64)
+    values = rng.uniform(-1.0, 1.0, size=int(indptr[-1])).astype(np.float32)
+    return indptr, indices, values, K
+
+
+def test_slice_ell_round_trip_preserves_rows_with_tail_and_empty_slice():
+    # Slice 0 has p=2 and slice 1 has p=1; the final three rows are a tail.
+    counts = [45] + [1] * 30 + [0] + [0] * 5 + [7, 2, 0]
+    indptr, indices, values, K = _csr(counts)
+    config = SliceELLConfig(core_rows=4, block_height=32, block_width=32, shim_columns=2)
+    packed = pack_csr(indptr, indices, values, K=K, config=config)
+    x = torch.rand(K, generator=torch.Generator().manual_seed(7)).to(torch.bfloat16)
+
+    assert packed.M == len(counts)
+    assert packed.padded_rows == 64
+    assert packed.slice_blocks.tolist() == [2, 1]
+    assert torch.allclose(reference_slice_ell(packed, x).float(), reference_csr(indptr, indices, values, x).float(), atol=0.02, rtol=0.02)
+
+
+def test_all_zero_matrix_has_no_a_payload_and_zero_output():
+    indptr = np.zeros(34, dtype=np.int64)
+    config = SliceELLConfig(shim_columns=2)
+    packed = pack_csr(indptr, np.empty(0, dtype=np.int64), np.empty(0, dtype=np.float32), K=64, config=config)
+    assert packed.slice_blocks.tolist() == [0, 0]
+    assert packed.packed_words.size == 0
+    x = torch.ones(64, dtype=torch.bfloat16)
+    assert torch.equal(reference_slice_ell(packed, x), torch.zeros(33, dtype=torch.bfloat16))
+
+
+def test_packed_config_keeps_bf16_vector_bits_and_uint16_control_words():
+    x = torch.tensor([1.0, -2.5, 0.25], dtype=torch.bfloat16)
+    config = make_packed_config(x, [0, 257], max_local_slices=4)
+    words = config.view(torch.uint16).numpy()
+    assert config.numel() == 32  # 64-byte alignment
+    assert np.array_equal(words[:3], x.view(torch.uint16).numpy())
+    assert words[3:7].tolist() == [0, 257, 0, 0]
+
+
+def test_manifest_and_payloads_are_reproducible(tmp_path):
+    indptr, indices, values, K = _csr([3, 0, 7, 1, 32, 33])
+    packed = pack_csr(indptr, indices, values, K=K, config=SliceELLConfig(shim_columns=1))
+    paths = packed.save(tmp_path, "tiny")
+    manifest = json.loads(paths["manifest"].read_text())
+    assert paths["packed_A"].exists() and paths["slice_blocks"].exists()
+    assert manifest["format"] == "row-order-preserving-slice-ell"
+    assert manifest["config"]["block_height"] == 32
+    assert manifest["packed_words"] == np.load(paths["packed_A"]).size

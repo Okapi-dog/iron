@@ -531,6 +531,27 @@ Slice-ELL を同時に導入しない。
 4. manifest に固定parameter、容量・padding、format layoutを記録する。最終的な latency 最適化は
    dynamic design が実機で動いた後の別工程にする。
 
+#### Phase 2 の実装入口
+
+`slice_ell.py` はNPU/MLIRに依存しない format module である。CSR の
+`(indptr, indices, values, shape)` を入力とし、既定の
+`R=4, B_h=32, B_w=256, shim_columns=8` で pack する。個別の比較には
+`--core-rows`、`--block-height`、`--block-width` を明示してよいが、Phase 2 の
+baselineを変えてはならない。
+
+```bash
+python -m iron.operators.spmv.slice_ell \
+  --csr-npz matrix.npz --output-dir npu_data/slice_ell --stem layer_name
+
+source /opt/xilinx/xrt/setup.sh
+python -m pytest iron/operators/spmv/test_slice_ell.py -q
+```
+
+CLI入力のNPZには`indptr`、`indices`、`values`、および`shape=[M,K]`（または`K`）を入れる。
+出力は`*_packed_A.npy`、`*_slice_blocks.npy`、`*_manifest.json`である。testはNPUを使用せず、
+元CSR referenceとの一致、row順、末尾zero-row padding、`slice_blocks=0`、config objectの
+`[x | control | 64-byte padding]` layoutを検証する。
+
 ### Phase 3: 静的な Slice-ELL data path を確認する
 
 1. `slice_blocks[s]` が全sliceで同じ小さなsynthetic matrixを使い、A split、config broadcast、
