@@ -8,6 +8,7 @@ __pycache__
 .DS_Store
 *.bin
 build/*
+npu_data/
 **/_build/**
 **/build/**
 **/build_elf/**
