@@ -563,3 +563,121 @@ def spmv_slice_ell_dynamic_scalar(dev, M, K, total_blocks, trace_size=0, func_pr
     prog = Program(dev, runtime, workers=workers)
     maybe_enable_trace(prog, trace_size, workers)
     return prog.resolve_program()
+
+
+def spmv_slice_ell_dynamic_scalar_multicol(
+    dev, M, K, blocks_per_column, trace_size=0, func_prefix=""
+):
+    """Phase-4 scalar-state Slice-ELL with four core rows in every active column.
+
+    ``blocks_per_column[c]`` is the exact number of fixed-size A objects sent
+    to column ``c``.  A counts may differ, while the number of y slice objects
+    is identical across columns; this preserves the static join/drain contract.
+    """
+    rows, block_height, block_width = 4, 32, 256
+    core_height = block_height // rows
+    blocks_per_column = tuple(int(n) for n in blocks_per_column)
+    cols = len(blocks_per_column)
+    if not 1 <= cols <= 8 or M <= 0 or M % (block_height * cols) or K <= 0:
+        raise ValueError("cols must be 1..8 and M divisible by 32*cols")
+    if any(n < 0 for n in blocks_per_column):
+        raise ValueError("blocks_per_column entries must be non-negative")
+
+    slices_per_column = M // (block_height * cols)
+    config_words = K + slices_per_column
+    total_blocks = sum(blocks_per_column)
+    dtype = np.dtype[bfloat16]
+    config_dtype = np.dtype[np.int16]
+    l1_a_ty = np.ndarray[(core_height * block_width * 2,), dtype]
+    l2_a_ty = np.ndarray[(block_height * block_width * 2,), dtype]
+    l1_config_ty = np.ndarray[(config_words,), config_dtype]
+    l1_state_ty = np.ndarray[(core_height,), np.dtype[np.float32]]
+    l1_y_ty = np.ndarray[(core_height,), dtype]
+    l3_a_ty = np.ndarray[(total_blocks * block_height * block_width * 2,), dtype]
+    l3_config_ty = np.ndarray[(cols * config_words,), config_dtype]
+    l3_y_ty = np.ndarray[(M,), dtype]
+
+    init_kernel = Kernel(
+        f"{func_prefix}slice_ell_scalar_state_init", f"{func_prefix}spmv_ell.o", [l1_state_ty]
+    )
+    accumulate_kernel = Kernel(
+        f"{func_prefix}slice_ell_scalar_state_accumulate_bf16",
+        f"{func_prefix}spmv_ell.o",
+        [l1_a_ty, l1_config_ty, l1_state_ty],
+    )
+    finalize_kernel = Kernel(
+        f"{func_prefix}slice_ell_scalar_state_finalize_bf16", f"{func_prefix}spmv_ell.o", [l1_state_ty, l1_y_ty]
+    )
+
+    a_cols, config_cols, y_cols, workers = [], [], [], []
+    for col in range(cols):
+        mem = Tile(col, 1)
+        a_col = ObjectFifo(l2_a_ty, name=f"dynamic_scalar_a_col_{col}", depth=2)
+        config_col = ObjectFifo(l1_config_ty, name=f"dynamic_scalar_config_col_{col}", depth=1)
+        y_col = ObjectFifo(np.ndarray[(block_height,), dtype], name=f"dynamic_scalar_y_col_{col}", depth=2)
+        a_cols.append(a_col)
+        config_cols.append(config_col)
+        y_cols.append(y_col)
+        a_cores = a_col.cons().split(
+            [r * core_height * block_width * 2 for r in range(rows)], tile=mem,
+            depths=[2] * rows, obj_types=[l1_a_ty] * rows,
+            names=[f"dynamic_scalar_a_{col}_{r}" for r in range(rows)],
+        )
+        y_cores = y_col.prod().join(
+            [r * core_height for r in range(rows)], tile=mem, obj_types=[l1_y_ty] * rows,
+            names=[f"dynamic_scalar_y_{col}_{r}" for r in range(rows)],
+        )
+        for row in range(rows):
+            state = Buffer(l1_state_ty, name=f"dynamic_scalar_state_{col}_{row}")
+
+            def core_body(a_fifo, config_fifo, y_fifo, state_buf, init, accumulate, finalize):
+                config = config_fifo.acquire(1)
+                for local_slice in range(slices_per_column):
+                    init(state_buf)
+                    p_word = memref.load(config, [index.constant(K + local_slice)])
+                    p = index.casts(T.index(), p_word)
+                    for _ in range_(p):
+                        a = a_fifo.acquire(1)
+                        accumulate(a, config, state_buf)
+                        a_fifo.release(1)
+                    y = y_fifo.acquire(1)
+                    finalize(state_buf, y)
+                    y_fifo.release(1)
+                config_fifo.release(1)
+
+            workers.append(Worker(
+                core_body,
+                [a_cores[row].cons(), config_col.cons(), y_cores[row].prod(), state,
+                 init_kernel, accumulate_kernel, finalize_kernel],
+                tile=Tile(col, 2 + row), stack_size=2048, dynamic_objfifo_lowering=True,
+            ))
+
+    words_per_block = block_height * block_width * 2
+    a_taps, config_taps, y_taps = [], [], []
+    a_offset = 0
+    for col, count in enumerate(blocks_per_column):
+        if count == 0:
+            raise ValueError("the first multicolumn implementation does not support an empty A column")
+        a_words = count * words_per_block
+        a_taps.append(TensorAccessPattern([total_blocks * words_per_block], a_offset, [1, 1, 1, a_words], [0, 0, 0, 1]))
+        config_taps.append(TensorAccessPattern([cols * config_words], col * config_words, [1, 1, 1, config_words], [0, 0, 0, 1]))
+        y_taps.append(TensorAccessPattern([M], col * slices_per_column * block_height, [1, 1, 1, slices_per_column * block_height], [0, 0, 0, 1]))
+        a_offset += a_words
+
+    def sequence(A, config, Y, a_prods, config_prods, y_conss):
+        tasks = TaskGroup()
+        for col in range(cols):
+            a_prods[col].fill(A, a_taps[col], group=tasks)
+            config_prods[col].fill(config, config_taps[col], group=tasks)
+        for col in range(cols):
+            y_conss[col].drain(Y, y_taps[col], group=tasks, wait=True)
+        tasks.finish()
+
+    runtime = Runtime(
+        sequence,
+        [l3_a_ty, l3_config_ty, l3_y_ty,
+         [fifo.prod() for fifo in a_cols], [fifo.prod() for fifo in config_cols], [fifo.cons() for fifo in y_cols]],
+    )
+    prog = Program(dev, runtime, workers=workers)
+    maybe_enable_trace(prog, trace_size, workers)
+    return prog.resolve_program()

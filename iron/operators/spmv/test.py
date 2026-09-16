@@ -11,6 +11,7 @@ from iron.operators.spmv.op import SpMVSELL32
 from iron.operators.spmv.op import SpMVSELL32Block
 from iron.operators.spmv.op import SpMVSliceELLStatic
 from iron.operators.spmv.op import SpMVSliceELLDynamicScalar
+from iron.operators.spmv.op import SpMVSliceELLDynamicScalarMultiCol
 from iron.operators.spmv.reference import make_uniform_sell32, reference_sell32, reference_sell32_block
 from iron.operators.spmv.slice_ell import SliceELLConfig, cpu_spmv_slice_ell, csr_to_slice_ell
 
@@ -108,6 +109,47 @@ def test_slice_ell_dynamic_scalar_state_p0142(aie_context):
     config[2048:] = torch.from_numpy(packed.blocks_per_slice.astype(np.int16, copy=False))
     operator = SpMVSliceELLDynamicScalar(
         M=128, K=2048, total_blocks=int(packed.blocks_per_slice.sum()), context=aie_context
+    )
+    errors, _, _ = run_test(
+        operator,
+        {"packed": packed.packed_a_as_bf16, "config": config},
+        {"output": expected},
+        rel_tol=0.06,
+        abs_tol=1e-3,
+        warmup_iters=1,
+    )
+    assert not errors, errors
+
+
+def test_slice_ell_dynamic_scalar_state_p0142_8col(aie_context):
+    """Phase-4 integration: the same mixed p stream independently drives 8 columns."""
+    M, K, cols = 1024, 2048, 8
+    ps = [0, 1, 4, 2] * cols
+    row_counts = np.repeat(np.asarray(ps, dtype=np.int64) * 256, 32)
+    indptr = np.concatenate(([0], np.cumsum(row_counts, dtype=np.int64)))
+    rng = np.random.default_rng(221)
+    indices = rng.integers(0, K, size=int(indptr[-1]), dtype=np.uint16)
+    values = rng.uniform(-1.0, 1.0, size=int(indptr[-1])).astype(np.float32)
+    packed = csr_to_slice_ell(
+        indptr, indices, values, K=K,
+        config=SliceELLConfig(core_rows=4, block_height=32, block_width=256, shim_columns=cols),
+    )
+    vector = torch.rand(K, generator=torch.Generator().manual_seed(222)).to(torch.bfloat16)
+    expected = cpu_spmv_slice_ell(packed, vector)
+    slices_per_col = M // (32 * cols)
+    p_by_col = packed.blocks_per_slice.reshape(cols, slices_per_col)
+    blocks_per_col = tuple(int(p.sum()) for p in p_by_col)
+    assert blocks_per_col == (7,) * cols
+    config = torch.empty(cols * (K + slices_per_col), dtype=torch.int16)
+    x_words = vector.view(torch.uint16).view(torch.int16)
+    for col in range(cols):
+        base = col * (K + slices_per_col)
+        config[base : base + K] = x_words
+        config[base + K : base + K + slices_per_col] = torch.from_numpy(
+            p_by_col[col].astype(np.int16, copy=False)
+        )
+    operator = SpMVSliceELLDynamicScalarMultiCol(
+        M=M, K=K, blocks_per_column=blocks_per_col, context=aie_context
     )
     errors, _, _ = run_test(
         operator,

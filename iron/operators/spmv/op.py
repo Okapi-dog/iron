@@ -321,3 +321,50 @@ class SpMVSliceELLDynamicScalar(MLIROperator):
             AIERuntimeArgSpec("in", (self.K + self.M // 32,), dtype=np.dtype(np.int16)),
             AIERuntimeArgSpec("out", (self.M,)),
         ]
+
+
+@dataclass
+class SpMVSliceELLDynamicScalarMultiCol(MLIROperator):
+    """Phase-4 dynamic scalar-state Slice-ELL across one to eight columns."""
+
+    M: int
+    K: int
+    blocks_per_column: tuple[int, ...]
+    trace_size: int = 0
+    context: object | None = field(default=None, repr=False)
+
+    _name_aliases: ClassVar[dict[str, str]] = {
+        **MLIROperator._name_aliases,
+        "blocks_per_column": "bpc",
+        "trace_size": "trace",
+    }
+
+    def __post_init__(self) -> None:
+        self.blocks_per_column = tuple(int(n) for n in self.blocks_per_column)
+        cols = len(self.blocks_per_column)
+        if not 1 <= cols <= 8 or self.M <= 0 or self.M % (32 * cols) or self.K <= 0:
+            raise ValueError("cols must be 1..8 and M divisible by 32*cols")
+        if any(n <= 0 for n in self.blocks_per_column):
+            raise ValueError("the first multicolumn implementation requires non-empty A columns")
+        super().__init__(context=self.context)
+
+    def get_mlir_artifact(self):
+        return PythonGeneratedMLIRArtifact(
+            f"{self.name}.mlir",
+            DesignGenerator(
+                self.operator_dir / "design.py",
+                "spmv_slice_ell_dynamic_scalar_multicol",
+                (aie_utils.get_current_device(), self.M, self.K, self.blocks_per_column, self.trace_size),
+            ),
+        )
+
+    def get_kernel_artifacts(self):
+        return [KernelObjectArtifact("spmv_ell.o", dependencies=[SourceArtifact(self.operator_dir / "spmv.cc")])]
+
+    def get_arg_spec(self):
+        cols = len(self.blocks_per_column)
+        return [
+            AIERuntimeArgSpec("in", (sum(self.blocks_per_column) * 32 * 256 * 2,)),
+            AIERuntimeArgSpec("in", (cols * (self.K + self.M // (32 * cols)),), dtype=np.dtype(np.int16)),
+            AIERuntimeArgSpec("out", (self.M,)),
+        ]
