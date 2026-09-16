@@ -281,3 +281,161 @@ def spmv_sell32_block(dev, M, K, ell_width, rows, cols, trace_size=0, func_prefi
     prog = Program(dev, runtime, workers=workers)
     maybe_enable_trace(prog, trace_size, workers)
     return prog.resolve_program()
+
+
+def spmv_slice_ell_static(
+    dev,
+    M,
+    K,
+    blocks_per_slice,
+    rows=4,
+    cols=8,
+    block_height=32,
+    block_width=256,
+    trace_size=0,
+    func_prefix="",
+):
+    """Build the Phase-3 horizontal Slice-ELL kernel for a uniform block count.
+
+    ``blocks_per_slice`` is deliberately static and limited to one or two in
+    this first device design.  The worker acquires all of a slice's A objects
+    before calling one kernel, so the compiler can keep its eight FP32 vector
+    accumulators live across the complete slice.  Phase 4 replaces this fixed ABI with
+    the ragged ``blocks_per_slice[s]`` control path.
+    """
+    if rows < 1 or rows > 4 or block_height % rows:
+        raise ValueError("block_height must be divisible by 1..4 core rows")
+    if blocks_per_slice not in (1, 2):
+        raise ValueError("Phase-3 static Slice-ELL supports blocks_per_slice=1 or 2")
+    if block_width != 256 or block_width % 32:
+        raise ValueError("the first horizontal kernel uses block_width=256")
+    core_height = block_height // rows
+    if core_height != 8:
+        raise ValueError("the first horizontal kernel is specialized for C_h=8")
+    if M % (block_height * cols):
+        raise ValueError("M must be divisible by block_height * cols")
+    if K <= 0:
+        raise ValueError("K must be positive")
+
+    dtype = np.dtype[bfloat16]
+    words_per_core_block = core_height * block_width * 2
+    words_per_slice_block = block_height * block_width * 2
+    l1_a_ty = np.ndarray[(words_per_core_block,), dtype]
+    l1_x_ty = np.ndarray[(K,), dtype]
+    l1_y_ty = np.ndarray[(core_height,), dtype]
+    l2_a_ty = np.ndarray[(words_per_slice_block,), dtype]
+    l2_y_ty = np.ndarray[(block_height,), dtype]
+    slices_per_column = M // (block_height * cols)
+    l3_a_ty = np.ndarray[(M * blocks_per_slice * block_width * 2,), dtype]
+    l3_x_ty = np.ndarray[(K,), dtype]
+    l3_y_ty = np.ndarray[(M,), dtype]
+
+    kernel_args = [l1_a_ty, l1_x_ty, l1_y_ty]
+    if blocks_per_slice == 2:
+        # p=2 deliberately passes both distinct FIFO objects to one function:
+        # this is the A-plan register-residency experiment, not a BF16 y
+        # read/modify/write between horizontal blocks.
+        kernel_args = [l1_a_ty, l1_a_ty, l1_x_ty, l1_y_ty]
+    kernel = Kernel(
+        f"{func_prefix}slice_ell_horizontal_p{blocks_per_slice}_bf16",
+        f"{func_prefix}spmv_ell.o",
+        kernel_args,
+    )
+
+    a_cols, x_cols, y_cols, workers = [], [], [], []
+    for col in range(cols):
+        mem = Tile(col, 1)
+        a_col = ObjectFifo(l2_a_ty, name=f"slice_a_col_{col}", depth=blocks_per_slice)
+        x_col = ObjectFifo(l1_x_ty, name=f"slice_x_col_{col}", depth=1)
+        y_col = ObjectFifo(l2_y_ty, name=f"slice_y_col_{col}", depth=2)
+        a_cols.append(a_col)
+        x_cols.append(x_col)
+        y_cols.append(y_col)
+        a_cores = a_col.cons().split(
+            [r * words_per_core_block for r in range(rows)],
+            tile=mem,
+            depths=[blocks_per_slice] * rows,
+            obj_types=[l1_a_ty] * rows,
+            names=[f"slice_a_{col}_{r}" for r in range(rows)],
+        )
+        y_cores = y_col.prod().join(
+            [r * core_height for r in range(rows)],
+            tile=mem,
+            obj_types=[l1_y_ty] * rows,
+            names=[f"slice_y_{col}_{r}" for r in range(rows)],
+        )
+
+        def core_body(a_fifo, x_fifo, y_fifo, slice_kernel):
+            x = x_fifo.acquire(1)
+            for _ in range_(slices_per_column):
+                a = a_fifo.acquire(blocks_per_slice)
+                y = y_fifo.acquire(1)
+                if blocks_per_slice == 1:
+                    slice_kernel(a, x, y)
+                else:
+                    slice_kernel(a[0], a[1], x, y)
+                a_fifo.release(blocks_per_slice)
+                y_fifo.release(1)
+            x_fifo.release(1)
+
+        for row in range(rows):
+            workers.append(
+                Worker(
+                    core_body,
+                    [a_cores[row].cons(), x_col.cons(), y_cores[row].prod(), kernel],
+                    tile=Tile(col, 2 + row),
+                    # The horizontal A-plan uses eight live 1024-bit FP32
+                    # accumulators.  Let aiecc reserve the measured 1664 B
+                    # frame instead of rejecting the 1 KiB device default.
+                    stack_size=2048,
+                )
+            )
+
+    a_taps = [
+        TensorAccessPattern(
+            l3_a_ty.__args__[0],
+            col * slices_per_column * blocks_per_slice * words_per_slice_block,
+            [slices_per_column, blocks_per_slice, rows, words_per_core_block],
+            [
+                blocks_per_slice * words_per_slice_block,
+                words_per_slice_block,
+                words_per_core_block,
+                1,
+            ],
+        )
+        for col in range(cols)
+    ]
+    x_tap = TensorAccessPattern(l3_x_ty.__args__[0], 0, [1, 1, 1, K], [0, 0, 0, 1])
+    y_taps = [
+        TensorAccessPattern(
+            l3_y_ty.__args__[0],
+            col * slices_per_column * block_height,
+            [1, 1, 1, slices_per_column * block_height],
+            [0, 0, 0, 1],
+        )
+        for col in range(cols)
+    ]
+
+    def sequence(A, X, Y, a_prods, x_prods, y_conss):
+        task_group = TaskGroup()
+        for col in range(cols):
+            a_prods[col].fill(A, a_taps[col], group=task_group)
+            x_prods[col].fill(X, x_tap, group=task_group)
+        for col in range(cols):
+            y_conss[col].drain(Y, y_taps[col], group=task_group, wait=True)
+        task_group.finish()
+
+    runtime = Runtime(
+        sequence,
+        [
+            l3_a_ty,
+            l3_x_ty,
+            l3_y_ty,
+            [fifo.prod() for fifo in a_cols],
+            [fifo.prod() for fifo in x_cols],
+            [fifo.cons() for fifo in y_cols],
+        ],
+    )
+    prog = Program(dev, runtime, workers=workers)
+    maybe_enable_trace(prog, trace_size, workers)
+    return prog.resolve_program()

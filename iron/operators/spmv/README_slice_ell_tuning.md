@@ -155,16 +155,26 @@ Slice-ELL kernelでは通常のELL kernelと同様に、vector lane数`V=32`を�
 
 ```text
 for row = 0 .. C_h-1:
-  block_acc = fp32_vector_zero(V)
-  for j = 0 .. B_w-1 step V:
-    idx = load_u16xV(A[row].index[j:j+V])
-    val = load_bf16xV(A[row].value[j:j+V])
-    xval = gather_x(idx)
-    block_acc += val * xval
-  row_acc[row] += reduce_add(block_acc)
+  acc[row] = fp32_vector_zero(V)                 # 32 FP32 lanes
+for horizontal block i = 0 .. p-1:
+  for row = 0 .. C_h-1:
+    for j = 0 .. B_w-1 step V:
+      idx  = load_u16xV(A[i][row].index[j:j+V])
+      val  = load_bf16xV(A[i][row].value[j:j+V])
+      xval = gather_x(idx)
+      acc[row] += val * xval
+for row = 0 .. C_h-1:
+  y[row] = bf16(reduce_add(acc[row]))
 ```
 
-`row_acc[C_h]`はsliceの全A blockを処理する間FP32で保持し、最後に一度だけBF16のyへ変換する。
+`acc[C_h]`はsliceの全A blockを処理する間、**32-lane FP32 vector accumulator**として保持し、
+最後に一度だけreduceしてBF16のyへ変換する。scalarの`row_acc[C_h]`をblockごとに更新する案は、
+register圧を下げる比較用のB案であり、最初のA案ではない。
+
+AIE-ML v2では512-bitの`bm` accumulatorが32本あり、二本をaliasした1024-bitの`cm` viewは16本、
+2048-bitの`dm` viewは8本ある。BF16×BF16の32 accumulator laneは1024 bitなので、
+`C_h=8`のA案は概念上`cm`を8本使い、file全体の半分である。これは容量の見積もりであって、
+実際のregister allocationを保証するものではない。compilerが要求するstackと生成命令を必ず確認する。
 これによりblockごとにBF16へ丸め直す誤差を避ける。`V=32`を使うため、`B_w` は32の倍数にする。
 `C_h={2,4,8,16}`、`B_w={128,256}`は最初に profile する**例**であり、format やCLIの選択肢を
 限定するものではない。実装に渡す基本 parameter は`R`、`B_h`、`B_w`であり、
@@ -187,13 +197,15 @@ config_bytes = align64(2*K + 2*N_ctl,c)
 L1(C_h, B_w, K) ~= config_bytes
                     + 2 * C_h*B_w * (2 + 2) # A value/index, depth 2
                     + 2 * C_h * 2           # BF16 y, depth 2
-                    + 4 * C_h               # FP32 row accumulator
+                    + compiler stack/frame   # FP32 vector accumulator と呼出frame
                     + state/stack
-                 = config_bytes + 8*C_h*B_w + 8*C_h + state/stack   [byte]
+                 = config_bytes + 8*C_h*B_w + 4*C_h + compiler stack/frame   [byte]
 ```
 
 ここで `K` は入力 vector の長さです。`N_ctl,c` は小さいため、config の大半は x です。
-y の depth は実装時の ObjectFIFO depth に合わせて式を更新する。現行 `measure.py` は
+y の depth は実装時の ObjectFIFO depth に合わせて式を更新する。A案の`acc[C_h]`自体は
+accumulator register fileに置くことを狙うが、register allocatorがframe/spillを要求する場合は
+その分を`compiler stack/frame`として実測値で足す。現行 `measure.py` は
 64 KiB から 2 KiB を引いた 62 KiB を探索上限に使っていますが、NPU2 の data memory
 64 KiB と program memory 16 KiB は別領域です。したがって、この 62 KiB は program code
 を差し引く式ではなく、state・stack・alignment・compiler が置く buffer の余裕を確保する
@@ -527,9 +539,12 @@ Slice-ELL を同時に導入しない。
 1. 最初のparameterを `R=4, B_h=32, B_w=256` に固定する。packer は将来の比較用に
    `--core-rows 4 --block-height 32 --block-width 256` のような任意値を受けるが、自動探索・
    `pareto.json`・`plan.json` は作らない。
-2. row-order-preserving packer を作り、in-memory `packed_a`, `blocks_per_slice`, `manifest.json` を生成する。
-   `blocks_per_slice[s]=0`、末尾 row、padding index=0、複数 Shim column への連続 slice 割当を含める。
-   runtime用 host reference は x と column-local `blocks_per_slice` から固定長 `runtime_config` を生成する。
+2. row-order-preserving packer を作り、in-memory `packed_a`, `blocks_per_slice`, `manifest` を生成する。
+   A本体の厳密な線形順は
+   `[slice][horizontal block][core-row][local row][indices B_w][values B_w]` とする。
+   これは旧SELL-32の`[slot][index/value][32 rows]`ではない。`blocks_per_slice[s]=0`、末尾 row、
+   padding index=0、複数 Shim column への連続 slice 割当を含める。xとcolumn-local controlを一つに
+   packする`runtime_config`はPhase 4でdeviceへ渡すためのhost helperとしてだけ作る。
 3. 同じ packed format を読む Python reference と property test を作り、元 sparse matrix reference と
    全行一致させる。pack/unpack、padding、slice/column境界もNPUなしで検証する。
 4. manifest に固定parameter、容量・padding、format layoutを記録する。最終的な latency 最適化は
@@ -566,13 +581,42 @@ CLI入力のNPZには`indptr`、`indices`、`values`、および`shape=[M,K]`（
 `cpu_spmv_csr()`と`cpu_spmv_slice_ell()`の一致、row順、末尾zero-row padding、
 `blocks_per_slice=0`、config objectの`[x | control | alignment zeros]` layoutを検証する。
 
-### Phase 3: 静的な Slice-ELL data path を確認する
+### Phase 3: 横方向vector kernel と静的 Slice-ELL data path
 
-1. `blocks_per_slice[s]` が全sliceで同じ小さなsynthetic matrixを使い、A split、config broadcast、
-   y join、連続y drainを検証する。kernelは`V=32`を横slot方向に使い、block間はFP32の
-   `row_acc[C_h]`へ蓄積し、slice末尾で一度だけBF16へ変換する。
-2. この段階では dynamic ObjectFIFO を使わない。`C_h` 行/core、`B_h=R*C_h` 行/slice の y が
-   元の row 順に一度だけ DDR へ書かれることを確認する。
+ここでいう **synthetic matrix** はモデルの実weightではなく、CSRから人工的に作る小行列である。
+各rowをちょうど`p×B_w`個の非ゼロで埋め、全sliceの`blocks_per_slice[s]`を同じ静的な`p`にする。
+したがってこの工程は「packerだけの確認」ではなく、最終設計に必要な新しい横方向kernelを最初に
+NPU上で成立させる工程である。
+
+1. Phase 2のA layoutをそのまま使う。MemTileは一つの`B_h×B_w` A blockを`R`個の
+   `C_h×B_w` objectへsplitし、各coreは同じsliceの`p` objectを消費する。ここではconfig broadcastも
+   dynamic ObjectFIFOも導入しない。
+2. 新kernelは旧`SELL-32-block`の「32行をlaneにする」kernelを流用しない。32 laneを**一行内の横slot**
+   に使い、各coreで`acc[0]..acc[C_h-1]`（それぞれ`aie::accum<accfloat,32>`）を保持する。p個の
+   A objectを一回のkernel callへ渡し、全blockを加算後にのみ`reduce_add`してBF16 yへ変換する。
+3. 最初の固定parameterは`R=4, B_h=32, C_h=8, B_w=256`で、静的ABIを`p=1`と`p=2`だけに
+   限定する。`acquire(p)`でp個を同時に取得し、p=2でもBF16 yのread/modify/writeを間に挟まない。
+   これが **A案**（8本のvector accumulatorを保持）の実測対象である。
+4. A split、x broadcast、固定長の4-core y join、連続y drain、CPU reference一致を確認する。
+   yは`C_h`行/core、join後は常に`B_h`行/sliceで、元のrow順に一度だけDDRへ書く。
+
+#### 2026-09-17 の Phase 3 初回結果
+
+NPU2、全`4×8=32` core、`M=1024, K=2048, R=4, B_h=32, C_h=8, B_w=256`で、uniform `p=1`および
+uniform `p=2`のCSR synthetic matrixをpackして実行した。両方ともCPU packed-format referenceと一致した。
+`C_h=8`のA案はAIE-ML v2の1024-bit `cm` accumulator viewを8本使う設計である。AIECCは各coreに
+1,664 Bのstack frameを要求したため、Workerには2 KiBを明示した。これはコンパイル時のL1 frame予約であり、
+64 KiBのL1枯渇エラーではない。現時点では「stack値だけ」からspillの有無を断定しない。B案との同一条件の
+latency比較と、必要時の生成命令確認を次に行う。
+
+`run_test`のwarmup 2回後、pytest repeat 5回の各`result.npu_time`を記録した初回値は次である。
+これは同じp内のfunctional smoke measurementであり、異なるpの絶対latencyを直接比較する性能結論ではない
+（p=2はA slot数・転送量がp=1の二倍である）。
+
+| static `p` | 5回平均 latency | 実効A+X+y帯域の平均 | 解釈 |
+|---:|---:|---:|---|
+| 1 | 143.1 µs | 7.44 GB/s | 256 slots/row, 一A object/slice |
+| 2 | 148.1 µs | 14.21 GB/s | 512 slots/row, 二A objectを一call内でFP32加算 |
 
 ### Phase 4: dynamic `blocks_per_slice[s]` を四 core micro-test で検証する
 

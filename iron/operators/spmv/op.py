@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import ClassVar
 
 import aie.utils as aie_utils
+import numpy as np
+import torch
 
 from iron.common import (
     AIERuntimeArgSpec,
@@ -173,4 +175,105 @@ class SpMVSELL32Block(SpMVSELL32):
                     self.trace_size,
                 ),
             ),
+        )
+
+
+@dataclass
+class SpMVSliceELLStatic(MLIROperator):
+    """Phase-3 horizontal Slice-ELL with one static p=1 or p=2 ABI.
+
+    This is intentionally not the final ragged operator.  It is the smallest
+    device experiment that can hold eight FP32 32-lane accumulators across all
+    horizontal A blocks belonging to one slice.
+    """
+
+    M: int
+    K: int
+    blocks_per_slice: int
+    rows: int = 4
+    cols: int = 8
+    block_height: int = 32
+    block_width: int = 256
+    trace_size: int = 0
+    context: object | None = field(default=None, repr=False)
+
+    _name_aliases: ClassVar[dict[str, str]] = {
+        **MLIROperator._name_aliases,
+        "blocks_per_slice": "p",
+        "block_height": "bh",
+        "block_width": "bw",
+        "trace_size": "trace",
+    }
+
+    def __post_init__(self) -> None:
+        if self.blocks_per_slice not in (1, 2):
+            raise ValueError("Phase-3 static Slice-ELL supports blocks_per_slice=1 or 2")
+        if not 1 <= self.rows <= 4 or self.block_height % self.rows:
+            raise ValueError("block_height must be divisible by 1..4 core rows")
+        if self.block_height // self.rows != 8:
+            raise ValueError("the first horizontal kernel is specialized for C_h=8")
+        if self.block_width != 256:
+            raise ValueError("the first horizontal kernel is specialized for B_w=256")
+        if self.M <= 0 or self.K <= 0 or self.M % (self.block_height * self.cols):
+            raise ValueError("M must be positive and divisible by block_height*cols")
+        if self.trace_size < 0:
+            raise ValueError("trace_size must be non-negative")
+        super().__init__(context=self.context)
+
+    def get_mlir_artifact(self):
+        return PythonGeneratedMLIRArtifact(
+            f"{self.name}.mlir",
+            DesignGenerator(
+                self.operator_dir / "design.py",
+                "spmv_slice_ell_static",
+                (
+                    aie_utils.get_current_device(),
+                    self.M,
+                    self.K,
+                    self.blocks_per_slice,
+                    self.rows,
+                    self.cols,
+                    self.block_height,
+                    self.block_width,
+                    self.trace_size,
+                ),
+            ),
+        )
+
+    def get_kernel_artifacts(self):
+        return [KernelObjectArtifact("spmv_ell.o", dependencies=[SourceArtifact(self.operator_dir / "spmv.cc")])]
+
+    def get_arg_spec(self):
+        return [
+            AIERuntimeArgSpec("in", (self.M * self.blocks_per_slice * self.block_width * 2,)),
+            AIERuntimeArgSpec("in", (self.K,)),
+            AIERuntimeArgSpec("out", (self.M,)),
+        ]
+
+    def reference(self, packed, vector):
+        from .slice_ell import PackedSliceELL, SliceELLConfig, cpu_spmv_slice_ell
+
+        config = SliceELLConfig(
+            core_rows=self.rows,
+            block_height=self.block_height,
+            block_width=self.block_width,
+            shim_columns=self.cols,
+        )
+        slices = self.M // self.block_height
+        words_per_slice = config.words_per_slice_block
+        raw = packed.detach().cpu().contiguous().view(torch.uint16).numpy()
+        return cpu_spmv_slice_ell(
+            PackedSliceELL(
+                M=self.M,
+                K=self.K,
+                nnz=0,
+                config=config,
+                padded_rows=self.M,
+                packed_a=raw,
+                blocks_per_slice=np.full(slices, self.blocks_per_slice, dtype=np.uint16),
+                slice_word_offsets=np.arange(slices + 1, dtype=np.uint64)
+                * self.blocks_per_slice * words_per_slice,
+                column_slice_offsets=np.arange(self.cols + 1, dtype=np.uint32) * (slices // self.cols),
+            ),
+            vector,
         )
