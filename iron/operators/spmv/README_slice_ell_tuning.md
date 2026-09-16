@@ -816,3 +816,54 @@ L1に保持するものとし、BF16 yのblock RMWは採用しない。
 
 この方針なら、行順と y の固定長転送を保ったまま、各 layer の分布に応じて A の
 packing parameter を変えられます。
+
+#### 2026-09-17 Phase 5: K-tiled dense GEMV baseline
+
+Slice-ELL と同じ core 配置で dense baseline を取るため、標準 `operators/gemv` とは別に
+`operators/gemv/k_tiled_design.py` / `k_tiled.cc` を追加した。標準 GEMV は1 coreへ全長 `x[K]`
+を置く1行配置であり、`K=11008`ではA ping-pongと合わせてL1に収まらない。また標準の`cols=4`は
+**4 shim column x 1 core**であり、Slice-ELLの4-core条件（**1 shim column x 4 core**）とは物理配置が異なる。
+
+新baselineの固定contractは次の通りである。
+
+- `cols=1`: 1 shim column x 4 core = 4 core、`cols=8`: 8 shim column x 4 core = 32 core。
+- 1 coreは2 output rowを担当する。A objectはcolumnごとに`8 row x K_t`、MemTileで4つの
+  `2 row x K_t` objectへsplitする。
+- xも`K_t`ごとに4 coreへbroadcastする。各output blockでx tileを再送するため、input trafficは
+  dense Aに対してx分の12.5%増となるが、full `x[K]`をL1常駐させない。
+- 各coreは2個のFP32 scalar stateをK tile全体で保持し、最後にだけBF16 yを出す。`K_t=4096`を
+  基本とし、`K=11008`はpaddingを避ける正確な32-lane divisor `K_t=1376`を用いる。
+
+`--verify`によるCPU BF16 reference一致を、`4096 x 4096`（4/32 core）と`4096 x 11008`（4 core）で
+確認した。以下はwarmup 2回、`result.npu_time` 5 sample平均である。帯域は、実際に渡した
+`packed A + repeated x` input bytesに対する値であり、出力は十分小さいため含めない。
+
+| Llama weight | shape | dense K-tiled 32 core | BW | dense K-tiled 4 core | BW | Slice-ELL / dense latency (32 / 4 core) |
+|---|---:|---:|---:|---:|---:|---:|
+| `layers.3.self_attn.o_proj` | `4096 x 4096` | 760.2808 us | 49.6618 GB/s | 2507.6794 us | 15.0565 GB/s | 2.77x / 2.53x |
+| `layers.0.mlp.gate_proj` | `11008 x 4096` | 1874.6630 us | 54.1280 GB/s | 6482.1036 us | 15.6541 GB/s | 1.86x / 1.34x |
+| `layers.0.mlp.down_proj` | `4096 x 11008` | 1875.9670 us | 54.0830 GB/s | 6495.3294 us | 15.6201 GB/s | 2.92x / 2.24x |
+| `layers.25.mlp.down_proj` | `4096 x 11008` | 1876.7506 us | 54.0604 GB/s | 6503.7516 us | 15.5999 GB/s | 3.90x / 3.08x |
+
+右端は、同じweightに対するPhase 5 Slice-ELL（`B_h=8, B_w=256`）のlatencyをこのdense baselineで
+割った値である。したがって大きいほどSlice-ELLが短い。gate projectionはSlice-ELL paddingが最大であり、
+優位性も最小になる。
+
+健全性の確認として、上流標準GEMVの8 shim column / 8 core測定は順に
+`695.8602`, `1705.5578`, `1754.3086`, `1754.9766` usであった。新baselineの32 core値はこれより
+約`9.3%`, `9.9%`, `6.9%`, `6.9%`遅いのみで、x tile再送の12.5% traffic増とObjectFIFO controlを考えれば
+妥当である。1 shim columnについても、標準GEMVの1 core `4096 x 4096`は`2465.1744 us`、新baselineの
+4 coreは`2507.6794 us`（1.7%差）だった。従って4 core側が4倍速くならないのはcore不足ではなく、1本の
+shim column DMAが飽和しているためである。
+
+再現command:
+
+```bash
+source /opt/xilinx/xrt/setup.sh
+source /home/hitoshi/ironenv-mlir-v1.4.3/bin/activate
+cd /home/hitoshi/IRON-mlir-v1.4.3/iron
+NPU_RUNTIME=xrt \
+PYTHONPATH=/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-packages:$PYTHONPATH \
+python operators/spmv/measure_llama_dense_gemv_k_tiled.py \
+  /home/hitoshi/elsa/pruned_model/Llama-2-7b-hf_pruned0.9_admm_lr5e-05_20260301_2016
+```
