@@ -27,3 +27,21 @@ extern "C" void sparse_matvec_ell_bf16(
     y[row] = static_cast<bfloat16>(aie::reduce_add(acc.template to_vector<float>()));
   }
 }
+
+extern "C" void sell32_spmv_bf16(
+    uint32_t ell_width,
+    const bfloat16 *__restrict packed,
+    const bfloat16 *__restrict x,
+    bfloat16 *__restrict y) {
+  ::aie::set_rounding(aie::rounding_mode::conv_even);
+  aie::accum<accfloat, 32> acc = aie::zeros<accfloat, 32>();
+  for (uint32_t slot = 0; slot < ell_width; ++slot) {
+    const bfloat16 *slot_base = packed + slot * 64;
+    const auto idx = aie::load_v<32>(reinterpret_cast<const uint16_t *>(slot_base));
+    const auto val = aie::load_v<32>(slot_base + 32);
+    aie::vector<bfloat16, 32> gathered;
+    for (uint32_t lane = 0; lane < 32; ++lane) gathered[lane] = x[idx[lane]];
+    acc = aie::mac(acc, val, gathered);
+  }
+  aie::store_v(y, acc.template to_vector<bfloat16>());
+}

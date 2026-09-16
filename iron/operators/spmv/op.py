@@ -92,3 +92,43 @@ class SpMVELL(MLIROperator):
         from .reference import reference_ell
 
         return reference_ell(packed, vector, self.M, self.ell_width)
+
+
+@dataclass
+class SpMVSELL32(MLIROperator):
+    """Static SELL-C with C=32 and row-order-preserving block order."""
+
+    M: int
+    K: int
+    ell_width: int
+    rows: int = 4
+    cols: int = 8
+    context: object | None = field(default=None, repr=False)
+
+    _name_aliases: ClassVar[dict[str, str]] = {**MLIROperator._name_aliases, "ell_width": "w"}
+
+    def __post_init__(self) -> None:
+        if self.M % (32 * self.rows * self.cols):
+            raise ValueError("M must be divisible by 32*rows*cols")
+        if self.K % 32 or self.ell_width % 32:
+            raise ValueError("K and ell_width must be multiples of 32")
+        super().__init__(context=self.context)
+
+    def get_mlir_artifact(self):
+        return PythonGeneratedMLIRArtifact(
+            f"{self.name}.mlir",
+            DesignGenerator(
+                self.operator_dir / "design.py", "spmv_sell32",
+                (aie_utils.get_current_device(), self.M, self.K, self.ell_width, self.rows, self.cols),
+            ),
+        )
+
+    def get_kernel_artifacts(self):
+        return [KernelObjectArtifact("spmv_ell.o", dependencies=[SourceArtifact(self.operator_dir / "spmv.cc")])]
+
+    def get_arg_spec(self):
+        return [
+            AIERuntimeArgSpec("in", (self.M * self.ell_width * 2,)),
+            AIERuntimeArgSpec("in", (self.K,)),
+            AIERuntimeArgSpec("out", (self.M,)),
+        ]

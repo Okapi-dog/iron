@@ -21,3 +21,21 @@ def reference_ell(packed: torch.Tensor, vector: torch.Tensor, M: int, ell_width:
     indices = words[:, 0, :].to(torch.long)
     values = words[:, 1, :].view(torch.int16).view(torch.bfloat16).float()
     return (values * vector.float()[indices]).sum(dim=1).to(torch.bfloat16)
+
+
+def make_uniform_sell32(M: int, K: int, ell_width: int, seed: int = 0):
+    rng = np.random.default_rng(seed)
+    blocks = M // 32
+    indices = rng.integers(0, K, size=(blocks, ell_width, 32), dtype=np.uint16)
+    values = torch.from_numpy(rng.uniform(-1, 1, size=(blocks, ell_width, 32)).astype(np.float32)).to(torch.bfloat16)
+    words = np.empty((blocks, ell_width, 2, 32), dtype=np.uint16)
+    words[:, :, 0, :] = indices
+    words[:, :, 1, :] = values.view(torch.uint16).numpy()
+    return torch.from_numpy(words.reshape(-1)).view(torch.int16).view(torch.bfloat16)
+
+
+def reference_sell32(packed: torch.Tensor, vector: torch.Tensor, M: int, ell_width: int):
+    words = packed.contiguous().view(torch.uint16).view(M // 32, ell_width, 2, 32)
+    indices = words[:, :, 0, :].permute(0, 2, 1).to(torch.long)
+    values = words[:, :, 1, :].view(torch.int16).view(torch.bfloat16).permute(0, 2, 1).float()
+    return (values * vector.float()[indices]).sum(dim=2).reshape(-1).to(torch.bfloat16)

@@ -57,6 +57,23 @@ pytest -q -s iron/operators/spmv/test.py --iterations 1 \
 `170.2 us`、payloadベースeffective bandwidthは`6.196 GB/s`だった。これは一回のsanity runであり、
 Phase 0の5-sample性能baselineとは比較しない。
 
+### SELL-32 のL1制約
+
+SELL-32でwidth 256、`m=1`のcore入力objectは`32 × 256 × (index 2 B + value 2 B)`、すなわち
+32 KiBである。最新compilerはdepth=2のA FIFO（64 KiB）にxとstackを加える配置を明確に拒否した。
+この最小baselineではcore側A FIFOをdepth=1にする。これは機能移植の設定であり、overlapを含む性能設定は
+L1容量を満たすwidth/depthの組を別途選ぶ。
+
+再現コマンド:
+
+```bash
+pytest -q -s iron/operators/spmv/test.py::test_static_sell32_1024x2048 \
+  --iterations 1 --csv-output /tmp/phase1_spmv_sell32.csv
+```
+
+2026-09-16の実機結果はCPU reference一致（`1 passed`）、NPU execution latency `217.2 us`、
+effective bandwidth `4.855 GB/s`である。これも機能移植のsanity runである。
+
 ## 次の順序
 
 1. `design_sell32.py` 相当を最新 `MLIROperator` / `Runtime`へ移し、固定幅SELL-32のjoin/splitと
