@@ -136,7 +136,7 @@ export PYTHONPATH="$PWD:/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-package
 
 `sell_c_sigma_design.py` の `sell_reorder_route()`、`sell_c_sigma.cc` のcopy/scatter kernel、`sell_c_sigma_op.py` のoperator、および `test_sell_route.py` を新規作成した。3 producerは**単純コピー**でありSpMVではない。各列で2/4/4 BF16の3 producer出力をMemTileで10要素にjoinし、専用coreがdummy 2要素を除く8行をwindow内row mapでscatterする。完成した1 windowのみをcanonical出力としてdrainする。producer→reorderの途中にDRAM書戻しはない。
 
-ws007のNPU2、`mlir-aie v1.4.3`環境で `M=1024, 8 column/8 window`、`M=28672, 8 column/8 window`、`M=28672, 8 column/16 window` の新規random permutationを実行し、BF16出力がCPU期待値と**bitwise一致**した（3 passed）。16 windowでは1列のreorder workerとL1 FIFOを2 windowで再利用した。
+ws007のNPU2、`mlir-aie v1.4.3`環境で `M=1024, 8 column/8 window` のidentity/reverse/random、`M=28672, 8 column/8 window` と `M=28672, 8 column/16 window` のrandomを実行し、BF16出力がCPU期待値と**bitwise一致**した（5 passed）。16 windowでは1列のreorder workerとL1 FIFOを2 windowで再利用した。
 
 生成された `input_with_addresses.mlir` の `M=28672/16 window` 代表列: reorder L1はcanonical `1792×BF16=3584 B`、map `1792×int16=3584 B`、join FIFO `2×10×BF16=40 B`を割当。reorder tileには4 buffer・6 lock、MemTileには4 buffer・12 lock。Shimは入力MM2S 2本（physical/map）と出力S2MM 1本。reorder tileのDMAは入力S2MM 2 channel・出力MM2S 1 channel、計4 BD。これらは代表列の生成MLIR上の数であり、全デバイス合計ではない。MemTileのbank配置はphysicalの2 objectがbank 0/1、joinedの2 objectがbank 2/3。worker stack/code等は上記payload容量に含めていない。
 
@@ -178,4 +178,4 @@ export PYTHONPATH="$PWD:$PYTHONPATH"
   -m iron.operators.spmv.measure_sell_dedicated --M 4096 --K 4096 --seed 73
 ```
 
-上記回帰テストは **28 passed**。NPU compileの生成物は `build/<operator-name>.mlir.d/input_with_addresses.mlir` で確認できる。
+上記回帰テストは **30 passed**。NPU compileの生成物は `build/<operator-name>.mlir.d/input_with_addresses.mlir` で確認できる。

@@ -20,7 +20,7 @@ def make_matrix(M: int, K: int, pattern: str):
     if pattern == "identity":
         counts = np.full(M, 30, dtype=np.int64)
     elif pattern == "reverse":
-        counts = np.resize(np.array([0, 1, 257, 300, 4, 280, 0, 260]), M)
+        counts = np.arange(M, dtype=np.int64)  # Descending-NNZ sort exactly reverses the rows.
     elif pattern == "random":
         counts = rng.integers(0, 340, size=M, dtype=np.int64)
         counts[::11] = 0
@@ -56,6 +56,10 @@ def test_sell_dedicated_matches_csr(aie_context, M, K, columns, windows, pattern
             shim_columns=columns, window_count=windows,
         ),
     )
+    if pattern == "identity":
+        assert np.array_equal(packed.row_indices, np.arange(M))
+    elif pattern == "reverse":
+        assert np.array_equal(packed.row_indices, np.arange(M - 1, -1, -1))
     x = torch.rand(K, generator=torch.Generator().manual_seed(61)).to(torch.bfloat16)
     A, control, block_counts = make_dedicated_inputs(packed, x)
     operator = SpMVSELLDedicated(

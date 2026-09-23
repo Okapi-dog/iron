@@ -40,6 +40,8 @@ def make_route_input(M: int, windows: int, pattern: str, seed: int = 81):
 @pytest.mark.parametrize(
     "M,columns,windows,pattern",
     [
+        (1024, 8, 8, "identity"),
+        (1024, 8, 8, "reverse"),
         (1024, 8, 8, "random"),
         (28672, 8, 8, "random"),
         (28672, 8, 16, "random"),
