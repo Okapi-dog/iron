@@ -314,3 +314,234 @@ export PYTHONPATH="$PWD:$PYTHONPATH"
 ```
 
 スクリプトは平均だけでなく5個の生sample、中央値、ホストcall全体の時間、除外したダミー時間をJSONで出す。今後のSELL/Dense比較では、**連続dispatchと交互dispatchを別指標**として同じ行列・同じ実行条件で並記する。今回のダミーは小さなdense GEMVであり、実際のLlama layer間で使われる具体的なoperator列を模擬したわけではない。また別xclbin/別hw_contextの交互dispatchであって、複数operatorを単一ELF・同一contextへまとめた推論実装にも同じ約2 msが必ず掛かると主張するものではない。Step 4.5の表は合成行列で、実pruning weightのStep 5評価を置き換えない。
+
+## Step 5 — 実Llama-2-7B pruning weightの共通条件比較
+
+### 共通入力・実装
+
+`measure_sell_step5.py`を追加した。1 weightにつき`safetensors`から**1つのCSRとBF16 `x`**を作り、同じ値からK-tiled dense GEMV、行順維持Slice-ELL、SELL-C-σ方式A/Bをpackする。`x_seed`は代表weight順に3000–3003。全方式の出力を同じCPU CSR参照の**元の行順**で検証し、不一致なら計測結果を採用しない。SELL方式A/Bは同じ`FormatSpec`なら同じpacked A/row mapを生成する。`--design`、`--weight`、`--windows`だけで比較ケースを選べる。各ケースの識別子・hash・容量・列負荷・実測5 sampleは[実測JSONL](step5_llama2_7b_results.jsonl)に保存した。packed行列やxclbin本体は保存しない。
+
+装置はws007のNPU2、mlir-aie `1.4.3.dev85+gdf48abc`、XRT `2.21.0`、NPU firmware `1.1.2.64`。ローカル作業元は`spmv/sell-c-sigma`の`532a07d`＋本Step 5変更。実機の一時checkoutは`3c603e9`を基点にStep 5スクリプトと`test_utils.py`を転送したもので、測定用の依存するStep 1–4の実装は同一。8列使用、`B_h=8,B_w=256`、SELLは8 window、方式Aは`(2,3,3)`計算core＋並び替えcore、方式Bは`(2,2,2,2)`計算coreのうち1 coreを並び替えに時分割。NPU呼出しは**ダミー無し連続dispatch**、warmup 2回＋timed 5回の`result.npu_time`平均。packing、CPU検証、初回compile/load、host BO転送は計時外。`run_test()`へ任意の生sample返却を追加し、既存呼出しの3値APIは保った。
+
+### 正規順出力の実測
+
+下表は再測定の5 sample平均。単位µs。全16ケースでCPU CSR参照と許容誤差内で一致した。`A/SELL`と`B/SELL`には、**NPU内の並び替え完了まで**含む。DenseとSlice-ELLは元から正規順なので、その値がSpMV-onlyでもある。SELLのSpMV-onlyを同じトポロジーから厳密に切り出す計時はまだ無く、JSONLではnullにしている（identity mapを使っても並び替えcoreの仕事は残る）。
+
+| 実weight | M×K | NNZ | Dense 32 core | Slice-ELL 32 core | SELL A 24+8 core | SELL B 32 core | A/対Slice速度比 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| L3 `self_attn.o_proj` | 4096×4096 | 1,677,722 | 767.6 | 319.1 | **258.0** | 281.9 | 1.24× |
+| L0 `mlp.gate_proj` | 11008×4096 | 4,508,876 | 1869.0 | 986.8 | **528.4** | 565.9 | 1.87× |
+| L0 `mlp.down_proj` | 4096×11008 | 4,508,877 | 1867.4 | 637.6 | **477.5** | 487.0 | 1.34× |
+| L25 `mlp.down_proj` | 4096×11008 | 4,508,877 | 1876.2 | **459.5** | 472.2 | 487.7 | 0.97× |
+
+いずれも密度は約10%。前回の独立した探索測定ではL3 `o_proj`のSlice/Aは273.8/275.1 µs、L25 `down_proj`は490.6/471.1 µsだった。特にこの2行列の小差は測定順やランタイム変動と同じ程度なので、**勝敗は未確定**。一方L0 `gate_proj`とL0 `down_proj`でのAの優位は両測定で再現した。方式Bは成立・数値一致するが、今回の4行列ではAより速いとはいえない。これらはカーネル連続実行時の時間であり、Step 4.5の別xclbin交互dispatch時間は含まない。
+
+### ストレージと16 windowの判断
+
+| 実weight | Dense BF16 A | Slice-ELL A | SELL 8-window A | SELL/密なA | 8-window最大列block | 16-window最大列block |
+|---|---:|---:|---:|---:|---:|---:|
+| L3 `o_proj` | 33.55 MB | 9.18 MB | 8.63 MB | 25.7% | 137 | 139 |
+| L0 `gate_proj` | 90.18 MB | 49.28 MB | 23.83 MB | 26.4% | 375 | 376 |
+| L0 `down_proj` | 90.18 MB | 29.33 MB | 20.48 MB | 22.7% | 322 | 328 |
+| L25 `down_proj` | 90.18 MB | 20.97 MB | 20.83 MB | 23.1% | 319 | 319 |
+
+MBは10⁶ byte。SELL AはBF16値＋uint16列indexで1 slotあたり4 byte、row mapはM×2 byte（4096行で8192 B、11008行で22016 B）。表のSELL/密なAはrow mapを含まないため、総保存量を見るときは別途足す。JSONLには各方式のpadded slots/NNZ、`sum/max blocks_per_slice`、列workload・不均衡、hash、制御stream容量、MemTile ObjectFIFOの**明示payload下限**を記録した。この下限はcompiler bookkeeping/routing bufferを含む実際のL2割当量ではない。operator APIから確実なbuild-cache hit/missは取れないためnullと理由を記録した。
+
+16 windowのstorage-only事前評価では、上表の通り最大列blockは改善せず、packed Aはそれぞれ8.74/24.20/20.83/20.86 MBへ増えた。window内map/outputは半分になるが、**8 windowは全4ケースで実機通過**し、L1不足も生じていない。計画の「容量か最大列負荷に利益がある場合」の条件を満たさないため、16 windowのNPU速度測定はこのStepでは実施しない。16 windowの改善を一般に否定するものではない。
+
+### 再現方法
+
+```bash
+source /opt/xilinx/xrt/setup.sh
+export NPU_RUNTIME=xrt
+export PYTHONPATH="$PWD:/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-packages:$PYTHONPATH"
+MODEL=/home/hitoshi/elsa/pruned_model/Llama-2-7b-hf_pruned0.9_admm_lr5e-05_20260301_2016
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
+  -m iron.operators.spmv.measure_sell_step5 "$MODEL" \
+  --output-jsonl /tmp/sell-step5-results.jsonl
+# --weight、--design、--windows 8/16 で部分再実行できる。
+# JSONLは追記式なので再測定時は新しい出力パスを指定する。
+```
+
+実機回帰: `test_evaluation.py`、`test_sell_c_sigma.py`、`test_sell_spmv.py`、`test_sell_time_multiplex.py`で**44 passed**。実機側の主要なStep 1–4依存7ファイルは作業ブランチとSHA-256一致を確認した。小差の採否・window数の最終判断は次のStep 6で複数run・順序変更も含めて行う。
+
+## Step 5追加実験 — slice高さと転送粒度
+
+### 検証する仮説と実際の転送経路
+
+方式Aの3計算coreで`B_h=6,8,9,18,36,72`（各coreの担当行数は順に2、従来の`2/3/3`、3、6、12、24）を試した。`B_w=256`、8 column・8 window、同じ4つのpruning weightと各weightの同じCSR/x、canonical出力のCPU照合、warmup 2＋timed 5、ダミーなし。各A ObjectFIFO objectは`B_h×256×4 B`なので6.1/8.2/9.2/18.4/36.9/73.7 kBとなる。
+
+注意点: [方式Aデザイン](sell_c_sigma_design.py)のShim A TAPは、各columnが担当する**全packed Aを1つの連続範囲**として`fill`する。よって高さ8でもDRAM→MemTileの論理アドレスはすでに連続しており、高さを増やしてもその範囲の連続性は改善しない。物理DRAM transactionがどこで分割されるかまではこのTAPだけでは断定できない。変化するのは主にMemTile→coreのObjectFIFO object長、slice数/制御回数、各coreの逐次行処理量、paddingと列負荷である。「高くするとDRAM読出しが初めて連続になる」という前提は現行デザインには当てはまらない。
+
+### 実装で必要になった修正
+
+`SELLCoreLayout`とC kernelのrow数別入口を2/3/6/12/24行へ拡張し、方式AのFP32 stateをcore担当行数に合わせた。既存`B_h=8`、方式Bの経路は維持した。最初の`B_h=6,9`はcompileできても実行時timeoutとなった。原因はpackerが実行列の行数を8 windowへほぼ均等に切り、paddingを最後のwindowだけへ加えた一方、NPU control/output ABIは**全windowが同じslice数**と仮定していたこと。`equal_rows`の場合、先に固定長物理windowを決め、その範囲内だけでsortするようpackerと容量推定器を合わせた。修正後は数値一致し、window長の回帰テストを追加した。これは単なる速度調整ではなく、固定長FIFOの正しさに必要な修正である。
+
+### 実機結果
+
+下表は各ケース5 sample平均のcanonical出力レイテンシ（µs）。括弧内は`packed A + row map`のDense BF16 Aに対する容量比。全ての数値があるケースはCPU CSR参照と一致した。[高さ6](sell-height6.jsonl)、[8](sell-height8.jsonl)、[9](sell-height9.jsonl)、[18](sell-height18.jsonl)、[36](sell-height36.jsonl)、[72](sell-height72.jsonl)に生sampleとhashを保存した。1高さにつき1回の測定runなので、数%の差は結論に使わない。
+
+| `B_h` | 担当行/core | A object | L3 o_proj | L0 gate_proj | L0 down_proj | L25 down_proj |
+|---:|---:|---:|---:|---:|---:|---:|
+| 6 | 2/2/2 | 6.1 kB | 270.1 (25.66%) | **519.6** (26.31%) | **477.1** (22.53%) | **461.5** (23.11%) |
+| 8 | 2/3/3 | 8.2 kB | **246.2** (25.76%) | 532.8 (26.45%) | 486.5 (22.72%) | 477.9 (23.11%) |
+| 9 | 3/3/3 | 9.2 kB | 255.1 (25.90%) | 543.9 (26.53%) | 478.6 (22.82%) | 473.1 (23.14%) |
+| 18 | 6/6/6 | 18.4 kB | 277.9 (26.67%) | 576.3 (27.09%) | 511.1 (23.66%) | 481.6 (23.17%) |
+| 36 | 12/12/12 | 36.9 kB | 294.0 (28.26%) | 590.3 (28.56%) | 552.8 (25.48%) | 474.8 (23.31%) |
+| 72 | 24/24/24 | 73.7 kB | 366.3 (31.45%) | 636.7 (31.34%) | L1不足 | 同じK・配置でL1不足見込み、未実行 |
+
+`B_h=72,K=11008`のL0 down_projはMLIR-AIEのL1割当段階で`allocated buffers exceeded available memory`。代表coreのmemory mapではA ping-pongが49,152 B、configが22,036 B、stackが2,048 Bで、この3つだけで73,236 Bとなり64 KiBを超える。L25 down_projも同じKとcore/window配置なので試していない。K=4096の2ケースはcompile・実行・数値照合が成立した。
+
+今回の測定は**大きいA objectによる性能改善を支持しない**。高さ18以上は4行列で概ね遅く、例えばL0 gate_projは高さ8の532.8 µsから高さ36の590.3 µsへ増えた。高さ6の小さな改善は再測定の揺れと近い。大きい高さではpadding増加、最後のwindow/columnへの端数集中、1 coreで逐次処理する行数の増加があり、DRAM転送粒度が改善したとしても利益を相殺し得る。原因の内訳を断定するにはShim/MemTile/core別のtraceまたはperformance counterが必要。列全体のA TAPが既に連続であるため、次に転送効率を改善するならObjectFIFOの深さやDMA burstの実測を先に確認する方が筋がよい。
+
+```bash
+# ws007、前節と同じXRT/PYTHONPATH/model環境にて
+for H in 6 8 9 18 36 72; do
+  /home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
+    -m iron.operators.spmv.measure_sell_step5 "$MODEL" \
+    --design sell_dedicated_reorder --block-height "$H" \
+    --output-jsonl "/tmp/sell-height${H}.jsonl"
+done
+# B_h=72, K=11008は上記のL1制約で失敗するため、実際にはK=4096の2 weightだけ選択して実行。
+```
+
+`test_evaluation.py`、`test_sell_c_sigma.py`、`test_sell_spmv.py`、`test_sell_time_multiplex.py`は修正後**47 passed**。Step 5の初回表とは別run・改訂kernelなので、小差を表間で直接比較しない。
+
+## Step 5追加実験 — 1列の処理上限か、8列共有帯域か
+
+`measure_sell_column_scaling.py`を追加した。8列用に**一度だけpackしたA/control**を各列の連続部分に切り出し、`SpMVSELLDedicated`の1列構成で各列を単独実行する。したがって「1列用に行列をglobal sortし直した別データ」ではない。各列の出力は対応する元の行区間でCPU照合する。全8列同時を最初と最後にも測り、時間経過による揺れを挟み込んだ。方式Aは1列あたり3計算core＋1並び替えcore、8列で24計算core＋8並び替えcore。ダミーなし、warmup 2＋timed 5、同じBF16 A・x・row map。
+
+ここでの`A-only GB/s = packed A bytes / npu_time`は、実装が実際に送る行列payloadの実効レートであり、物理DRAM帯域カウンタではない。従来の`run_test()`の`effective GB/s`はAに加えてcontrolと出力も分子に含む。旧4-core Slice-ELL表は**全M行を1列で処理し、4 coreとも計算**していた。一方ここでは元の8列実行の**1/8 windowを1列に切り出し、計算coreは3つ**なので、旧表の約10 GB/sと同一条件の1列性能ではない。
+
+| weight / `B_h` | 単独1列A-only GB/s（8列の範囲） | 最も遅い単独列 | 8列同時A-only GB/s（前→後） | 8列同時時間（前→後） |
+|---|---:|---:|---:|---:|
+| L3 o_proj / 8 | 4.34–4.79 | 258.4 µs | 32.39→35.51 | 266.6→243.2 µs |
+| L0 gate_proj / 8 | 5.68–6.00 | 520.8 µs | 45.18→43.59 | 527.5→546.7 µs |
+| L0 down_proj / 8 | 5.41–5.81 | 473.4 µs | 43.25→44.72 | 473.5→458.0 µs |
+| L25 down_proj / 8 | 5.57–5.85 | 467.9 µs | 44.33→45.82 | 470.0→454.6 µs |
+| L0 gate_proj / 36 | 6.31–6.88 | 507.9 µs | 45.06→45.62 | 571.0→564.0 µs |
+| L0 down_proj / 36 | 5.95–6.71 | 509.5 µs | 42.72→43.43 | 537.6→528.8 µs |
+
+高さ8では8列同時の完了時間は、8個の単独列の**最大時間とほぼ同じ**（測定揺れを含め概ね±5%）。A-only帯域も単独1列の約4–6 GB/sから8列全体の約32–46 GB/sへほぼ比例して伸びる。したがって高さ8の方式Aを「8列の共有DRAM帯域で既に完全に頭打ち」とする根拠は弱く、各列の処理速度が主な上限に見える。Dense GEMVの約50–54 GB/sとの差には、SELL側の3計算core＋1 reorder、index付きA、[各32 laneの`x[idx]`を作る処理](sell_c_sigma.cc)と、Dense側の[連続`x` vector load](../gemv/k_tiled.cc)の違いがある。ただし個々の待機サイクルの寄与率はtrace/performance counterなしでは確定できない。
+
+高さ36のgate_projでは単独列A-onlyレートが約6.3–6.9 GB/sに上がり、最も遅い列は約521→508 µsへ少し短縮した。しかし8列同時のA-onlyは高さ8と同じ約45 GB/sで、時間は約530→565–571 µsへ増えた。ここでは8列並列時の追加待ちが示唆されるが、**DRAMだけ**が原因とは言えない。Shim DMA、MemTile FIFO、coreへの配送・同期、さらに高さ36のA容量増加を含めて切り分けが必要。down_projは高さ36で単独列の最大時間自体が473→510 µsへ悪化し、8列も遅くなる。大きいblockの利点が全行列に共通ではない。
+
+生sample: [gate H8](sell-column-scaling-h8.jsonl)、[gate H36](sell-column-scaling-h36.jsonl)、[L0 down H8](sell-column-scaling-down-h8.jsonl)、[L0 down H36](sell-column-scaling-down-h36.jsonl)、[L3/L25 H8](sell-column-scaling-other-h8.jsonl)。どのcaseもcanonical出力をCPU参照と照合済み。
+
+```bash
+# 前節と同じws007のXRT/PYTHONPATH/MODEL環境
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
+  -m iron.operators.spmv.measure_sell_column_scaling "$MODEL" \
+  --weight model.layers.0.mlp.gate_proj.weight --height 8 \
+  --output-jsonl /tmp/sell-column-scaling.jsonl
+```
+
+## 追加実験 — 16行×2スロットの縦方向ベクトル化
+
+`B_h=48, B_w=128`、3計算coreに各16行、1 reorder core/columnを割り当てた。Aブロック内は各coreについて、128スロットを2個ずつ組にして、`[16行×2スロットのindex 32個 | 同value 32個]`を64組並べる。C kernelは32 laneを64回MACし、各行の2 laneを足してFP32 scalar stateをL1に保存する。次のAブロックでも同じstateを読み、slice終端で一度だけBF16化する。したがって**128スロットを1命令でreduceする方式ではない**。Aは1 coreあたり8 KiB/object、depth 2で16 KiB。元の`B_h=8,B_w=256`の横方式も変更せず保持した。
+
+切り分けのため、同じ48×128 packed A・ブロック数・FIFO配置で、各行を横32 laneずつ処理する`horizontal16`も実装した。`vertical16`との差はAの格納順とcore内MAC/reduction方向である。両方ともCPU CSR参照とcanonical出力が一致した。4代表weight、同じCSRと入力x、ws007のNPU2、XRT、mlir-aie `1.4.3.dev85+gdf48abc`、warmup 2＋timed 5、ダミーなし。下表は5回の**平均µs**。1列は同じweightの先頭`ceil(M/8)`行を両方式で別々にpackした比較であり、8列用payloadの単なる切り出しではない。
+
+| weight | 1列window（約M/8行）・従来8×256横 | 1列window・48×128横 | 1列window・48×128縦 | 8列・従来8×256横 | 8列・48×128横 | 8列・48×128縦 |
+|---|---:|---:|---:|---:|---:|---:|
+| L3 `o_proj` | 238.1 | 245.3 | **226.1** | **271.8** | 308.7 | 286.6 |
+| L0 `gate_proj` | 509.5 | 479.8 | **437.0** | 543.3 | 556.3 | **540.2** |
+| L0 `down_proj` | 439.3 | 477.7 | **434.0** | **478.7** | 574.5 | 559.7 |
+| L25 `down_proj` | 471.7 | 415.9 | **409.3** | 476.2 | 447.9 | **448.7**（横との差は測定揺れ以下） |
+
+| weight | 8列・従来A MiB | 8列・48×128 A MiB | 8列・縦A-only GB/s | 従来比・縦のレイテンシ |
+|---|---:|---:|---:|---:|
+| L3 `o_proj` | 8.23 | 8.95 | 32.76 | **5.5%遅い** |
+| L0 `gate_proj` | 22.73 | 22.66 | 43.99 | 0.6%速い |
+| L0 `down_proj` | 19.53 | 22.36 | 41.89 | **16.9%遅い** |
+| L25 `down_proj` | 19.87 | 18.47 | 43.16 | 5.8%速い |
+
+「1列」と呼んでいた先の測定は、**全M行のSPMVではない**。8列用SELLの1 window相当、つまり約M/8行だけを1 columnの3計算core＋1 reorder core（物理4 core）で処理したmicrobenchmarkである。ここが以前の表の説明不足だった。質問に合わせて、全M行を1 column/4 coreで処理する追加測定も行った。次表の8列は全M行を8 column/32 coreで処理している。
+
+| weight | 1列/4 core 全M・8×256 | 1列/4 core 全M・48×128縦 | 8列/32 core 全M・8×256 | 8列/32 core 全M・48×128縦 |
+|---|---:|---:|---:|---:|
+| L3 `o_proj` | 1310.1 µs | 1152.7 µs | 271.8 µs | 286.6 µs |
+| L0 `gate_proj` | 3441.0 µs | 2711.4 µs | 543.3 µs | 540.2 µs |
+| L0 `down_proj` | 2909.3 µs | 2537.0 µs | 478.7 µs | 559.7 µs |
+| L25 `down_proj` | 3008.4 µs | 2438.2 µs | 476.2 µs | 448.7 µs |
+
+全Mで比較すると32 coreは4 coreより全ケースで速く、縦方式でも約4.0–5.8倍短い。8 core列に増やしても完全な8倍にならないのは並列効率・共有転送・reorderを含むためだが、「32 coreにしただけで1/8行の計測より遅くなった」という比較は対象行数が違うので成立しない。今回のH8→H48縦で32 core測定が遅くなったL3/L0 down_projは、従来カーネルと比べている。48×128の同一形状の横カーネルと縦カーネルは、8列では概ね同等で縦がわずかに速い。形式変更でA payloadが増えた列・window配置も効いており、vector方向だけでは説明できない。
+
+縦配置自体は、同一48×128容量の横配置に対して**1列windowの比較で4行列すべてを高速化**した。8列では平均値が初回timed sampleに影響されるため小差を断定しないが、中央値では縦が同一形状の横より約0.9–2.6%速い。例えばL3は横の5 sampleが`333.7,333.0,292.0,292.4,292.3 µs`、縦は`288.8,288.6,285.0,285.2,285.5 µs`で、平均値の差7.1%を純粋なkernel利益とは見なせない。対照的に従来8×256との差にはA容量が大きく関係していそうで、L0 down_projはAが約14.5%増え、縦kernelの1列上の利点を覆した。L25はAが約7.0%減り、8列も速い。ただし転送待ちの内訳をtraceで確認していないため容量だけへの因果帰属はしない。A-only GB/sは物理DRAMカウンタではなく`packed A bytes / NPU時間`である。
+
+結論: **縦方向MACは成立し、単独列には利益があるが、現在の48×128を全行列の標準設定にする根拠はない**。format選択は行列ごとのpadding/ブロック数と8列の遅い列で評価する必要がある。特にL0 down_projには従来8×256の方がよい。今回はtrace/performance counterで待機場所を同定していない。
+
+生sample: [1列window・従来/縦](sell-vertical16-col1.jsonl)、[1列window・同一形状横](sell-horizontal16-col1.jsonl)、[8列・従来/縦](sell-vertical16-col8.jsonl)、[8列・同一形状横](sell-horizontal16-col8.jsonl)、[1列で全M行](sell-vertical16-full-m1.jsonl)。再実行は、先述のws007環境で次を使う。
+
+既存SELL関連テストと新しいA配置のroundtripテストは**240 passed**（1件のPyTorch CSR beta warning）。
+
+```bash
+source /opt/xilinx/xrt/setup.sh
+export NPU_RUNTIME=xrt
+export PYTHONPATH=/tmp/sell-c-sigma-step0:/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-packages:$PYTHONPATH
+MODEL=/home/hitoshi/elsa/pruned_model/Llama-2-7b-hf_pruned0.9_admm_lr5e-05_20260301_2016
+for COLUMNS in 1 8; do
+  /home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
+    -m iron.operators.spmv.measure_sell_vertical16 "$MODEL" \
+    --columns "$COLUMNS" --layout all \
+    --output-jsonl "/tmp/sell-vertical16-${COLUMNS}.jsonl"
+done
+# 全M行を1 column / 4 coreで処理する比較（--columns 1が必要）
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
+  -m iron.operators.spmv.measure_sell_vertical16 "$MODEL" \
+  --columns 1 --full-matrix-one-column --layout all \
+  --output-jsonl /tmp/sell-vertical16-full-m1.jsonl
+```
+
+## 追加実験 — NNZ／Aブロック仕事量での列（window）分割【現時点では不採用】
+
+**結論：可変window分割は本線に採用しない。** 以下は後で検証し直せるように残す実験記録であり、通常のSELL-C-σ実行は従来の行数均等分割のままとする。実験用の分割・計測コード、生データ、再現手順は保存するが、ここで得た一部caseの改善を一般的な高速化として扱わない。
+
+これまでの実機SELLは、行順を保ったまま各windowへ同じ物理slice数を予約し、余ったsliceを最後のwindowの末尾に置いていた。各window内だけNNZ降順に並べ替える。行数はほぼ揃うが、各列のAブロック数まで揃う保証はない。ここでは連続したslice境界を、(1)従来の行数基準、(2)NNZ合計均等、(3)pack後のAブロック数均等、の3方式で決める。**全行列global sortはせず、元の行順をwindow間で維持**する。
+
+`sell_partition.py`の`balanced_blocks`はwindow内降順sort後のslice最大NNZを使い、各sliceの正確な`ceil(max_NNZ_in_slice / B_w)`を足してAブロック数を見積もる。累積推定値で初期境界を作り、隣接する境界を局所調整して最大列block数、その後の列間分散を下げる。単なるNNZ合計均等は比較用であり、SELLのpadding仕事量を直接均等化しない。
+
+窓ごとに論理行数が違っても、NPU側のA/control/output FIFO長は変えない。最大windowのslice数に全windowを揃え、短いwindow末尾には空行を挿入する。controlは各windowに`x`、sliceごとの`p`、local row mapを入れる。従来通りreorder coreが**window内**の行順を戻す。
+
+可変境界では固定長windowを単純に連結すると内部にpadding gapができる。初回の計測はそのgapを含む出力を照合していたため、最終出力としては不完全だった。修正版では各columnの出力DMA TAPの開始位置を、それ以前のwindowの**有効行数の累積**にする。転送長は引き続き固定の`rows_per_window`で、前windowのpaddingと次windowの有効データが重なる。`TaskGroup.finish()`を各出力DMAの直後に置いて転送をcolumn順に完了させる。`drain(wait=True)`を同じTaskGroupへ並べるだけでは順序を保証せず、実機で23要素が0に上書きされた。修正後はNPU出力bufferの**先頭M要素そのもの**をCPU CSRの元行順と照合した。bufferの後ろに残るpadding領域は次演算へ渡す対象から外す。これでホストcompactコピーや追加kernelなしに連続出力を得るが、出力DMAが順番待ちになる時間も下表のNPU latencyに含む。`compact_window_output()`はCPU上で同じ行順を確認するテスト補助で、実行時には呼ばない。
+
+### Xの転送回数
+
+現在のABIでは、`x`はAの各blockに付随して転送されるのではなく、各windowのcontrol object内に1回含まれる。1回のSpMV呼び出し中、compute coreはそのwindowのconfigを取得して保持し、複数slice/blockの計算に使う。したがって**1回の呼び出しにつき各column/windowへ1回**であり、A blockごとの再転送ではない。ただし8 windowなら論理control入力上はxが8コピー必要で、同じxを呼び出し間でNPU内に恒久保持する契約でもない。`K=4096`なら複製xは合計64 KiB、`K=11008`なら約172 KiB。実際にcore間でどの階層が複製を担うかはObjectFIFO loweringに依存する。
+
+### 8 column／32 core実機結果
+
+4つのLlama-2-7B pruning weightを、同じseedのBF16 xで測定した。各caseは2 warmup＋5 timed、dummy kernelなし。表のレイテンシは5 timed sampleの平均。A-only帯域は`packed A bytes / latency`であり、物理DRAMカウンタではない。block imbalanceは`max(blocks_per_window)/(total_blocks/8)`。表中の「equal」は行数均等、「block-balanced」は`balanced_blocks`。
+
+| weight | B_h×B_w | 行数均等 平均µs | block均等 平均µs | latency差 | max/mean block数 | A payload差 | block均等の追加padding行 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| L3 `o_proj` | 8×256 | 266.7 | 280.8 | +5.3% | 1.040→1.009 | +0.09% | 64 |
+| L0 `gate_proj` | 8×256 | 549.7 | 535.8 | −2.5% | 1.031→1.006 | +0.07% | 256 |
+| L0 `down_proj` | 8×256 | 475.7 | 504.8 | +6.1% | 1.030→1.014 | +0.04% | 128 |
+| L25 `down_proj` | 8×256 | 472.4 | 475.3 | +0.6% | 1.004→1.004 | 0.00% | 0 |
+| L3 `o_proj` | 48×128 | 317.6 | 299.1 | −5.8% | 1.257→1.095 | −0.52% | 384 |
+| L0 `gate_proj` | 48×128 | 544.6 | 552.3 | +1.4% | 1.059→1.022 | +0.41% | 384 |
+| L0 `down_proj` | 48×128 | 566.8 | 555.1 | −2.1% | 1.166→1.020 | +0.31% | 384 |
+| L25 `down_proj` | 48×128 | 458.0 | 488.6 | +6.7% | 1.025→1.024 | +0.13% | 0 |
+
+これは**block均等化が常に高速化するとは言えない**。8×256では元の行数基準でも列差が小さく、連続出力のために追加したDMA順序待ちが計算側の利益を上回るcaseがある。48×128のL3 `o_proj`では偏り1.257→1.095、A payload −0.52%となり、順序待ち込みでも約5.8%短かった。一方、L25 `down_proj`はblock balanceがほぼ同じで約6.7%遅い。数%の差には測定揺れがあるため、分割方針を採用する際には同じ行列で繰り返し測定する。行数基準の48×128境界は旧パッカーとA bytes・control bytes・列block数が全4行列で一致するよう修正済み。
+
+出力compactを含まない初回のwindow-major結果は別名で保存した。L0 `down_proj` 8×256をequal/block-balanced交互に3回測ると、各run平均の中央値は466.4/462.8 µsだったが、これは**内部gapを残した測定**であり、上表の連続出力結果と同一指標ではない。境界を選ぶ基準としてはNNZ合計よりblock数が実際のSELL payload/column workに直接対応する。ただし、連続出力のためのDMA順序コストを含む実測では改善と悪化が混在したため、今回は採用しない。初回のwindow-major結果は採否判断には使わない。
+
+新設したCPUテスト6件（2 geometry×3 policies）は通過し、NPU計測中も予測block数と実packed block数の一致、および**連続したM行のNPU出力**とCPU CSR参照の一致を全caseで確認した。pytest共通設定のNPU collection hookはこのCPU-onlyテスト単独実行を妨げるため、`--confcutdir=iron/operators/spmv`で上位hookを除いて実行した。NPU測定結果のraw sampleは[8×256](sell-partition-h8.jsonl)、[48×128](sell-partition-h48.jsonl)に保存した。旧window-major試作の生sampleは[8×256](sell-partition-window-major-h8.jsonl)、[48×128](sell-partition-window-major-h48.jsonl)、[交互再測定](sell-partition-window-major-h8-down0-repeat.jsonl)に残したが、これらは連続出力レイテンシとして引用しない。
+
+再現コマンド（通常は新しいJSONL出力先を指定する）：
+
+```bash
+source /opt/xilinx/xrt/setup.sh
+export NPU_RUNTIME=xrt
+export PYTHONPATH=/tmp/sell-c-sigma-step0:/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-packages:$PYTHONPATH
+MODEL=/home/hitoshi/elsa/pruned_model/Llama-2-7b-hf_pruned0.9_admm_lr5e-05_20260301_2016
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
+  -m iron.operators.spmv.measure_sell_partition "$MODEL" \
+  --height 8 --output-jsonl /tmp/sell-partition-h8.jsonl
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
+  -m iron.operators.spmv.measure_sell_partition "$MODEL" \
+  --height 48 --geometry vertical16 --output-jsonl /tmp/sell-partition-h48.jsonl
+# --policyを複数指定すると方式を選択／順序指定できる。
+```

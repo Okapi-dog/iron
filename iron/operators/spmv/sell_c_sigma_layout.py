@@ -16,8 +16,9 @@ class SELLCoreLayout:
     rows_per_core: tuple[int, int, int] = (2, 3, 3)
 
     def __post_init__(self):
-        if len(self.rows_per_core) != 3 or any(not 1 <= rows <= 4 for rows in self.rows_per_core):
-            raise ValueError("exactly three compute cores with 1..4 rows each are supported")
+        supported = (1, 2, 3, 4, 6, 12, 24)
+        if len(self.rows_per_core) != 3 or any(rows not in supported for rows in self.rows_per_core):
+            raise ValueError(f"exactly three compute cores with rows in {supported} are supported")
 
     @property
     def block_height(self) -> int:

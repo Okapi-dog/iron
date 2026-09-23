@@ -112,6 +112,8 @@ class DesignSpec:
             "ell": "ell",
             "slice_ell": "slice_ell",
             "sell_dedicated_reorder": "sell_c_sigma",
+            "sell_horizontal16_reorder": "sell_c_sigma",
+            "sell_vertical16_reorder": "sell_c_sigma",
             "sell_time_multiplex_reorder": "sell_c_sigma",
         }[self.name]
 
@@ -123,6 +125,8 @@ class DesignSpec:
             "ell": "existing",
             "slice_ell": "existing",
             "sell_dedicated_reorder": "existing",
+            "sell_horizontal16_reorder": "experimental",
+            "sell_vertical16_reorder": "experimental",
             "sell_time_multiplex_reorder": "existing",
         }[self.name]
 
@@ -332,7 +336,7 @@ def pack_existing_format(matrix: CSRMatrix, fmt: FormatSpec):
                 "balanced window assignment needs a future NPU/payload contract"
             )
         window_bounds = None
-        if fmt.name == "sell_c_sigma":
+        if fmt.name == "sell_c_sigma" and fmt.boundary_policy != "equal_rows":
             window_bounds = tuple(
                 int(x) for x in window_slice_bounds(matrix.profile, fmt)
             )
@@ -342,7 +346,7 @@ def pack_existing_format(matrix: CSRMatrix, fmt: FormatSpec):
             matrix.values,
             K=K,
             config=SliceELLConfig(
-                core_rows=4,
+                core_rows=3 if fmt.name == "sell_c_sigma" and fmt.block_height % 3 == 0 else 4,
                 block_height=fmt.block_height,
                 block_width=fmt.block_width,
                 shim_columns=fmt.columns,
@@ -577,13 +581,23 @@ def estimate_storage(
         logical_bounds = window_slice_bounds(profile, fmt)
         bounds = logical_bounds.copy()
         total_slices = (profile.M + fmt.block_height - 1) // fmt.block_height
-        padded_slices = ((total_slices + fmt.columns - 1) // fmt.columns) * fmt.columns
-        bounds[-1] = padded_slices
+        windows_per_column = fmt.window_count // fmt.columns
+        alignment = windows_per_column * (2 if fmt.block_height % 2 else 1)
+        slices_per_column = (total_slices + fmt.columns - 1) // fmt.columns
+        slices_per_column = ((slices_per_column + alignment - 1) // alignment) * alignment
+        padded_slices = slices_per_column * fmt.columns
+        if fmt.boundary_policy == "equal_rows":
+            # The NPU ABI consumes equal-size fixed windows. Distribute the
+            # physical padding over windows before sorting, not only at tail.
+            per_window = padded_slices // fmt.window_count
+            bounds = np.arange(fmt.window_count + 1, dtype=np.int64) * per_window
+        else:
+            bounds[-1] = padded_slices
         window_blocks: list[int] = []
         window_rows: list[int] = []
         max_block = 0
-        for first, last in zip(logical_bounds[:-1], logical_bounds[1:]):
-            begin = int(first) * fmt.block_height
+        for first, last in zip(bounds[:-1], bounds[1:]):
+            begin = min(int(first) * fmt.block_height, profile.M)
             end = min(int(last) * fmt.block_height, profile.M)
             sorted_counts = counts[begin:end][
                 np.argsort(-counts[begin:end], kind="stable")

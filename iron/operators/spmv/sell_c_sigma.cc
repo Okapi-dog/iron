@@ -43,6 +43,11 @@ extern "C" void sell_state_init(float *state) {
     state[row] = 0.0f;
 }
 
+extern "C" void sell_state_init_n(float *state, int32_t rows) {
+  for (int32_t row = 0; row < rows; ++row)
+    state[row] = 0.0f;
+}
+
 template <unsigned Rows>
 static void sell_accumulate_rows(
     const bfloat16 *packed, const int16_t *config_words, float *state) {
@@ -87,6 +92,83 @@ extern "C" void sell_accumulate4(
   sell_accumulate_rows<4>(packed, config_words, state);
 }
 
+extern "C" void sell_accumulate6(
+    const bfloat16 *packed, const int16_t *config_words, float *state) {
+  sell_accumulate_rows<6>(packed, config_words, state);
+}
+
+extern "C" void sell_accumulate12(
+    const bfloat16 *packed, const int16_t *config_words, float *state) {
+  sell_accumulate_rows<12>(packed, config_words, state);
+}
+
+extern "C" void sell_accumulate24(
+    const bfloat16 *packed, const int16_t *config_words, float *state) {
+  sell_accumulate_rows<24>(packed, config_words, state);
+}
+
+// Experimental vertical layout: each 32-lane vector contains two adjacent
+// slots from each of 16 rows.  A core receives 64 [indices32 | values32]
+// groups for B_w=128.  Reduce only the two lanes belonging to each row once
+// per block, then retain its scalar FP32 state in L1 across later blocks.
+extern "C" void sell_accumulate_vertical16(
+    const bfloat16 *packed, const int16_t *config_words, float *state) {
+  const auto *x = reinterpret_cast<const bfloat16 *>(config_words + 2);
+  aie::accum<accfloat, 32> acc = aie::zeros<accfloat, 32>();
+  AIE_PREPARE_FOR_PIPELINING
+  AIE_LOOP_MIN_ITERATION_COUNT(64)
+  for (unsigned pair = 0; pair < 64; ++pair) {
+    const auto *indices = reinterpret_cast<const uint16_t *>(packed + pair * 64);
+    const auto *values = packed + pair * 64 + 32;
+    const auto idx = aie::load_v<32>(indices);
+    const auto val = aie::load_v<32>(values);
+    aie::vector<bfloat16, 32> gathered;
+    AIE_LOOP_UNROLL_FULL
+    for (unsigned lane = 0; lane < 32; ++lane)
+      gathered[lane] = x[idx[lane]];
+    acc = aie::mac(acc, val, gathered);
+  }
+  alignas(64) float partial[32];
+  aie::store_v(partial, acc.template to_vector<float>());
+  // Peano currently cannot legalize the auto-vectorized 16-lane FP32 add.
+  volatile float *scalar_state = state;
+#pragma clang loop vectorize(disable)
+#pragma clang loop unroll(disable)
+  for (unsigned row = 0; row < 16; ++row)
+    scalar_state[row] += partial[2 * row] + partial[2 * row + 1];
+}
+
+// Exact-geometry control experiment: same 48x128 slices and three 16-row
+// cores, but vectors run horizontally within each row.
+extern "C" void sell_accumulate_horizontal16_128(
+    const bfloat16 *packed, const int16_t *config_words, float *state) {
+  const auto *x = reinterpret_cast<const bfloat16 *>(config_words + 2);
+  for (unsigned row = 0; row < 16; ++row) {
+    const bfloat16 *row_packed = packed + row * 256;
+    const auto *indices = reinterpret_cast<const uint16_t *>(row_packed);
+    const auto *values = row_packed + 128;
+    aie::accum<accfloat, 32> acc = aie::zeros<accfloat, 32>();
+    AIE_PREPARE_FOR_PIPELINING
+    AIE_LOOP_MIN_ITERATION_COUNT(4)
+    for (unsigned slot = 0; slot < 128; slot += 32) {
+      const auto idx = aie::load_v<32>(indices + slot);
+      const auto val = aie::load_v<32>(values + slot);
+      aie::vector<bfloat16, 32> gathered;
+      AIE_LOOP_UNROLL_FULL
+      for (unsigned lane = 0; lane < 32; ++lane)
+        gathered[lane] = x[idx[lane]];
+      acc = aie::mac(acc, val, gathered);
+    }
+    state[row] += aie::reduce_add(acc.template to_vector<float>());
+  }
+}
+
+extern "C" void sell_finalize16(const float *state, bfloat16 *output) {
+  ::aie::set_rounding(aie::rounding_mode::conv_even);
+  for (unsigned row = 0; row < 16; ++row)
+    output[row] = static_cast<bfloat16>(state[row]);
+}
+
 extern "C" void sell_finalize1(const float *state, bfloat16 *output) {
   ::aie::set_rounding(aie::rounding_mode::conv_even);
   output[0] = static_cast<bfloat16>(state[0]);
@@ -110,6 +192,25 @@ extern "C" void sell_finalize4(const float *state, bfloat16 *output) {
   ::aie::set_rounding(aie::rounding_mode::conv_even);
   for (unsigned row = 0; row < 4; ++row)
     output[row] = static_cast<bfloat16>(state[row]);
+}
+
+template <unsigned Rows>
+static void sell_finalize_rows(const float *state, bfloat16 *output) {
+  ::aie::set_rounding(aie::rounding_mode::conv_even);
+  for (unsigned row = 0; row < Rows; ++row)
+    output[row] = static_cast<bfloat16>(state[row]);
+}
+
+extern "C" void sell_finalize6(const float *state, bfloat16 *output) {
+  sell_finalize_rows<6>(state, output);
+}
+
+extern "C" void sell_finalize12(const float *state, bfloat16 *output) {
+  sell_finalize_rows<12>(state, output);
+}
+
+extern "C" void sell_finalize24(const float *state, bfloat16 *output) {
+  sell_finalize_rows<24>(state, output);
 }
 
 // Skip a core's alignment padding while scattering physical rows to their

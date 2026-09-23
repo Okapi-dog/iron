@@ -91,6 +91,25 @@ def test_equal_nnz_boundaries_are_nonempty_even_with_empty_rows():
     assert np.all(np.diff(bounds) == 1)
 
 
+@pytest.mark.parametrize("height", [6, 9, 18])
+def test_equal_rows_packer_uses_fixed_length_physical_windows(height):
+    """A padded final window must not desynchronize the NPU's control FIFO."""
+    matrix = generate_synthetic_csr(MatrixInput(
+        source="synthetic", M=130, K=512, density=0.1,
+        row_pattern="skewed", seed=41,
+    ))
+    fmt = FormatSpec("sell_c_sigma", block_height=height, window_count=8)
+    packed = pack_existing_format(matrix, fmt)
+    storage = estimate_storage(matrix.profile, fmt)
+    assert len(set(np.diff(packed.window_slice_offsets))) == 1
+    assert packed.padded_rows % (height * 8) == 0
+    assert packed.packed_a.nbytes == storage["packed_a_bytes"]
+    physical = cpu_spmv_slice_ell(packed, matrix.vector)
+    canonical = cpu_unpermute_windows(packed, physical)
+    reference = cpu_spmv_csr(matrix.indptr, matrix.indices, matrix.values, matrix.vector)
+    assert torch.allclose(canonical.float(), reference.float(), rtol=0.08, atol=0.025)
+
+
 def test_one_csr_and_vector_feed_existing_format_adapters():
     matrix_input = MatrixInput(
         source="synthetic",

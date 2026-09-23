@@ -6,12 +6,12 @@
 import numpy as np
 import torch
 
-from iron.operators.spmv.slice_ell import PackedSliceELL
+from iron.operators.spmv.slice_ell import PackedSliceELL, _words_to_bf16
 from iron.operators.spmv.sell_c_sigma_layout import SELLCoreLayout
 
 
 def make_window_inputs(packed: PackedSliceELL, x: torch.Tensor,
-                       rows_per_core=(2, 3, 3)):
+                       rows_per_core=(2, 3, 3), block_width=256):
     """Return packed A, fixed-length control stream, and A blocks/column.
 
     Each control window is ``[2 header words | BF16 x | p per slice | pad |
@@ -25,8 +25,8 @@ def make_window_inputs(packed: PackedSliceELL, x: torch.Tensor,
     if any(n <= 0 for n in rows_per_core):
         raise ValueError("every compute core must own at least one row")
     block_height = sum(rows_per_core)
-    if (config.block_height, config.block_width) != (block_height, 256):
-        raise ValueError("packed B_h must match the core layout and B_w must be 256")
+    if (config.block_height, config.block_width) != (block_height, block_width):
+        raise ValueError("packed B_h and B_w must match the core layout")
     if packed.window_count not in (config.shim_columns, 2 * config.shim_columns):
         raise ValueError("one or two windows per column are required")
     if packed.row_indices is None or packed.row_indices.dtype != np.uint16:
@@ -73,6 +73,23 @@ def make_dedicated_inputs(packed: PackedSliceELL, x: torch.Tensor,
     return make_window_inputs(packed, x, layout.rows_per_core)
 
 
+def make_vertical16_inputs(packed: PackedSliceELL, x: torch.Tensor):
+    """Transpose each 48x128 A block to 16-row, two-slot vector groups.
+
+    The row permutation and per-slice block counts are unchanged.  Only the
+    physical A payload changes; every 32-lane vector has two slots from each
+    of the 16 rows owned by one compute core.
+    """
+    if (packed.config.block_height, packed.config.block_width,
+            packed.config.core_rows) != (48, 128, 3):
+        raise ValueError("vertical16 needs a 48x128 SELL pack with three core rows")
+    # Reuse the control ABI, including the window-local inverse row map.
+    _, control, counts = make_window_inputs(packed, x, (16, 16, 16), block_width=128)
+    blocks = packed.packed_a.reshape(-1, 3, 16, 2, 64, 2)
+    vertical = blocks.transpose(0, 1, 4, 3, 2, 5).copy().reshape(-1)
+    return _words_to_bf16(vertical), control, counts
+
+
 def make_time_multiplex_inputs(packed: PackedSliceELL, x: torch.Tensor):
     """Prepare the Step-4 four-compute-core ABI with two rows per core."""
     return make_window_inputs(packed, x, (2, 2, 2, 2))
@@ -95,7 +112,19 @@ def prepare_sell_design(packed: PackedSliceELL, x: torch.Tensor,
         block_width=packed.config.block_width,
         columns=packed.config.shim_columns, window_count=packed.window_count,
     ))
-    if design_name == "sell_dedicated_reorder":
+    if design_name in ("sell_vertical16_reorder", "sell_horizontal16_reorder"):
+        if design_name == "sell_vertical16_reorder":
+            A, control, counts = make_vertical16_inputs(packed, x)
+        else:
+            A, control, counts = make_window_inputs(
+                packed, x, (16, 16, 16), block_width=128,
+            )
+        operator = SpMVSELLDedicated(
+            packed.padded_rows, packed.K, counts, packed.window_count,
+            rows_per_core=(16, 16, 16), block_width=128,
+            vertical16=design_name == "sell_vertical16_reorder", context=context,
+        )
+    elif design_name == "sell_dedicated_reorder":
         A, control, counts = make_dedicated_inputs(packed, x, rows_per_core)
         operator = SpMVSELLDedicated(
             packed.padded_rows, packed.K, counts, packed.window_count,

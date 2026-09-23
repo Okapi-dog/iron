@@ -145,7 +145,8 @@ def run_test(
     max_error_rate: float = 0.0,
     warmup_iters: int = 1,
     timed_iters: int = 1,
-) -> tuple[dict[str, list[int]], float, float]:
+    return_timings: bool = False,
+) -> tuple[dict[str, list[int]], float, float] | tuple[dict[str, list[int]], float, float, list[float]]:
     """
     Run operator test with specified input/output buffers.
 
@@ -160,7 +161,8 @@ def run_test(
         timed_iters: Number of timed iterations for latency/bandwidth measurement
 
     Returns:
-        (errors: dict, latency_us: float, bandwidth_gbps: float)
+        (errors: dict, latency_us: float, bandwidth_gbps: float). If
+        return_timings is true, append each timed NPU latency in microseconds.
     """
 
     if not isinstance(operator, AIEOperatorBase):
@@ -222,9 +224,11 @@ def run_test(
 
     # Run timed iterations and measure NPU execution time
     total_npu_ns = 0
+    timed_us = []
     for _ in range(timed_iters):
         result = op_func(*args)
         total_npu_ns += result.npu_time
+        timed_us.append(result.npu_time / 1e3)
     latency_us = (total_npu_ns / timed_iters) / 1e3
 
     # Verify outputs
@@ -248,6 +252,8 @@ def run_test(
     # NPU-side bandwidth (excludes host DMA transfer time)
     bandwidth_gbps = total_bytes / (latency_us * 1e-6) / 1e9
 
+    if return_timings:
+        return errors, latency_us, bandwidth_gbps, timed_us
     return errors, latency_us, bandwidth_gbps
 
 

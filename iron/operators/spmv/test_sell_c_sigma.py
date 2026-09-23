@@ -26,6 +26,8 @@ from iron.operators.spmv.slice_ell import (
     dense_to_slice_ell,
 )
 from iron.operators.spmv.sell_c_sigma_layout import SELLCoreLayout
+from iron.operators.spmv.sell_c_sigma_runtime import make_vertical16_inputs
+from iron.operators.spmv.sell_partition import compact_window_output, pad_csr_windows
 
 
 def _csr(counts, K=97):
@@ -44,6 +46,24 @@ def _check_reference(packed, pointers, indices, values, K):
     expected = cpu_spmv_csr(pointers, indices, values, x)
     assert torch.allclose(canonical.float(), expected.float(), atol=0.05, rtol=0.05)
     return physical, canonical
+
+
+def test_vertical16_payload_roundtrip_preserves_rows_and_control():
+    """Two slots from each of 16 rows share one vector, without changing CSR semantics."""
+    pointers, indices, values, K = _csr([2 + row % 7 for row in range(48)], K=257)
+    packed = csr_to_slice_ell(
+        pointers, indices, values, K=K,
+        config=SliceELLConfig(core_rows=3, block_height=48, block_width=128,
+                              shim_columns=1, window_count=1),
+    )
+    x = torch.rand(K, generator=torch.Generator().manual_seed(7)).to(torch.bfloat16)
+    vertical_a, control, counts = make_vertical16_inputs(packed, x)
+    source = packed.packed_a.reshape(-1, 3, 16, 2, 64, 2)
+    reordered = vertical_a.view(torch.uint16).numpy().reshape(-1, 3, 64, 2, 16, 2)
+    np.testing.assert_array_equal(reordered.transpose(0, 1, 4, 3, 2, 5), source)
+    assert counts == (int(packed.blocks_per_slice.sum()),)
+    assert control.numel() == 2 + K + 1 + ((2 + K + 1) % 2) + 48
+    _check_reference(packed, pointers, indices, values, K)
 
 
 @pytest.mark.parametrize(
@@ -196,6 +216,47 @@ def test_custom_boundaries_and_multicolumn_ownership():
     assert packed.column_blocks_per_slice(0).size == 3
     assert packed.column_blocks_per_slice(1).size == 5
     _check_reference(packed, pointers, indices, values, K)
+
+
+@pytest.mark.parametrize("block_height,block_width", [(8, 256), (48, 128)])
+@pytest.mark.parametrize("policy", ["equal_rows", "equal_nnz", "balanced_blocks"])
+def test_partitioned_windows_keep_fixed_transfer_and_predicted_blocks(
+    block_height, block_width, policy
+):
+    """Variable logical windows retain one equal-size physical FIFO contract."""
+    row_nnz = np.random.default_rng(21).integers(
+        0, 80, size=block_height * 53, dtype=np.int64
+    )
+    pointers = np.r_[0, np.cumsum(row_nnz)]
+    indices = np.concatenate([
+        np.arange(count, dtype=np.uint16) for count in row_nnz
+    ])
+    values = np.ones(indices.size, dtype=np.float32)
+    packed, valid_ranges, profile = pad_csr_windows(
+        pointers, indices, values, block_height, block_width, 8, policy, 128,
+    )
+    actual_blocks = [
+        int(packed.column_blocks_per_slice(column).sum()) for column in range(8)
+    ]
+    assert actual_blocks == profile["blocks_per_window"]
+    assert packed.padded_rows == 8 * profile["padded_rows_per_window"]
+    assert len(valid_ranges) == 8
+    assert sum(end - start for start, end in valid_ranges) == row_nnz.size
+    x = torch.rand(128, generator=torch.Generator().manual_seed(31)).to(torch.bfloat16)
+    physical = cpu_spmv_slice_ell(packed, x)
+    canonical = cpu_unpermute_windows(packed, physical)
+    expected = cpu_spmv_csr(pointers, indices, values, x)
+    rows_per_window = profile["padded_rows_per_window"]
+    for window, (start, end) in enumerate(valid_ranges):
+        base = window * rows_per_window
+        count = end - start
+        assert torch.allclose(
+            canonical[base:base + count].float(), expected[start:end].float(),
+            atol=0.05, rtol=0.05,
+        )
+        assert torch.count_nonzero(canonical[base + count:base + rows_per_window]) == 0
+    compacted = compact_window_output(canonical, valid_ranges)
+    assert torch.allclose(compacted.float(), expected.float(), atol=0.05, rtol=0.05)
 
 
 def test_global_reference_uses_uint32_for_large_window():
