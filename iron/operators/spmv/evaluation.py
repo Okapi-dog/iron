@@ -24,7 +24,7 @@ AssignmentPolicy = Literal["contiguous", "balanced"]
 
 
 @dataclass(frozen=True)
-class MatrixSpec:
+class MatrixInput:
     """Reproducible source of one canonical-row-order matrix and input vector."""
 
     source: Literal["synthetic", "safetensors"]
@@ -40,13 +40,13 @@ class MatrixSpec:
     def __post_init__(self) -> None:
         if self.source == "synthetic":
             if self.M is None or self.K is None or self.M <= 0 or self.K <= 0:
-                raise ValueError("synthetic MatrixSpec requires positive M and K")
+                raise ValueError("synthetic MatrixInput requires positive M and K")
             if self.density is None or not 0 <= self.density <= 1:
-                raise ValueError("synthetic MatrixSpec requires density in [0, 1]")
+                raise ValueError("synthetic MatrixInput requires density in [0, 1]")
         elif self.source == "safetensors":
             if not self.model_dir or not self.tensor_name:
                 raise ValueError(
-                    "safetensors MatrixSpec requires model_dir and tensor_name"
+                    "safetensors MatrixInput requires model_dir and tensor_name"
                 )
         else:
             raise ValueError(f"unsupported matrix source: {self.source}")
@@ -131,7 +131,7 @@ class DesignSpec:
 class MatrixProfile:
     """Rows and content fingerprint needed by the Step-0 storage model."""
 
-    spec: MatrixSpec
+    spec: MatrixInput
     M: int
     K: int
     row_nnz: np.ndarray
@@ -161,7 +161,7 @@ class MatrixProfile:
 
 
 @dataclass(frozen=True)
-class CanonicalMatrix:
+class CSRMatrix:
     """One materialized CSR and BF16 x, shared across all format adapters."""
 
     profile: MatrixProfile
@@ -191,7 +191,7 @@ class CanonicalMatrix:
         object.__setattr__(self, "values", values)
 
 
-def materialize_synthetic(spec: MatrixSpec) -> CanonicalMatrix:
+def generate_synthetic_csr(spec: MatrixInput) -> CSRMatrix:
     """Generate one reusable CSR/x pair; storage sweeps need not call this."""
 
     import torch
@@ -215,17 +215,17 @@ def materialize_synthetic(spec: MatrixSpec) -> CanonicalMatrix:
     vector = torch.rand(
         profile.K, generator=torch.Generator().manual_seed(spec.x_seed)
     ).to(torch.bfloat16)
-    return CanonicalMatrix(profile, pointers, indices, values, vector)
+    return CSRMatrix(profile, pointers, indices, values, vector)
 
 
-def safetensors_profile(spec: MatrixSpec) -> MatrixProfile:
+def safetensors_profile(spec: MatrixInput) -> MatrixProfile:
     """Read row lengths and tensor-content hash without materializing CSR."""
 
     import torch
     from safetensors.torch import safe_open
 
     if spec.source != "safetensors":
-        raise ValueError("safetensors_profile requires a safetensors MatrixSpec")
+        raise ValueError("safetensors_profile requires a safetensors MatrixInput")
     assert spec.model_dir is not None and spec.tensor_name is not None
     tensor_path = None
     for path_string in sorted(glob(str(Path(spec.model_dir) / "*.safetensors"))):
@@ -251,11 +251,11 @@ def safetensors_profile(spec: MatrixSpec) -> MatrixProfile:
     return MatrixProfile(spec, M, K, counts, digest.hexdigest())
 
 
-def materialize_matrix(spec: MatrixSpec) -> CanonicalMatrix:
+def load_or_generate_csr(spec: MatrixInput) -> CSRMatrix:
     """Create canonical CSR/x once, independent of the selected packed format."""
 
     if spec.source == "synthetic":
-        return materialize_synthetic(spec)
+        return generate_synthetic_csr(spec)
     import torch
     from safetensors.torch import safe_open
 
@@ -272,7 +272,7 @@ def materialize_matrix(spec: MatrixSpec) -> CanonicalMatrix:
     vector = torch.rand(
         profile.K, generator=torch.Generator().manual_seed(spec.x_seed)
     ).to(torch.bfloat16)
-    return CanonicalMatrix(
+    return CSRMatrix(
         profile,
         csr.crow_indices().numpy(),
         csr.col_indices().numpy(),
@@ -281,7 +281,7 @@ def materialize_matrix(spec: MatrixSpec) -> CanonicalMatrix:
     )
 
 
-def pack_existing_format(matrix: CanonicalMatrix, fmt: FormatSpec):
+def pack_existing_format(matrix: CSRMatrix, fmt: FormatSpec):
     """Use one canonical CSR for existing dense/ELL/Slice-ELL adapters.
 
     SELL-C-sigma packing is intentionally deferred to Step 1.  Never return
@@ -344,11 +344,11 @@ def pack_existing_format(matrix: CanonicalMatrix, fmt: FormatSpec):
     )
 
 
-def synthetic_row_counts(spec: MatrixSpec) -> np.ndarray:
+def synthetic_row_counts(spec: MatrixInput) -> np.ndarray:
     """Make exact-total row NNZ with uniform or heavy-tailed row lengths."""
 
     if spec.source != "synthetic":
-        raise ValueError("synthetic_row_counts requires a synthetic MatrixSpec")
+        raise ValueError("synthetic_row_counts requires a synthetic MatrixInput")
     assert spec.M is not None and spec.K is not None and spec.density is not None
     target = round(spec.M * spec.K * spec.density)
     if target == 0 or target == spec.M * spec.K:
@@ -382,7 +382,7 @@ def synthetic_row_counts(spec: MatrixSpec) -> np.ndarray:
     return counts
 
 
-def synthetic_profile(spec: MatrixSpec) -> MatrixProfile:
+def synthetic_profile(spec: MatrixInput) -> MatrixProfile:
     """Produce a profile without materializing a potentially huge CSR payload."""
 
     counts = synthetic_row_counts(spec)

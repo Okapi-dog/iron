@@ -11,10 +11,10 @@ from iron.operators.spmv.evaluation import (
     DesignSpec,
     FormatSpec,
     MatrixProfile,
-    MatrixSpec,
+    MatrixInput,
     estimate_storage,
-    materialize_synthetic,
-    materialize_matrix,
+    generate_synthetic_csr,
+    load_or_generate_csr,
     pack_existing_format,
     synthetic_profile,
     window_slice_bounds,
@@ -25,7 +25,7 @@ from iron.operators.spmv.slice_ell import cpu_spmv_csr, cpu_spmv_slice_ell
 
 @pytest.mark.parametrize("pattern", ["uniform", "skewed"])
 def test_synthetic_source_is_reproducible_and_has_exact_density(pattern):
-    spec = MatrixSpec(
+    spec = MatrixInput(
         source="synthetic", M=128, K=512, density=0.125, row_pattern=pattern, seed=13
     )
     first = synthetic_profile(spec)
@@ -39,7 +39,7 @@ def test_synthetic_source_is_reproducible_and_has_exact_density(pattern):
 
 
 def test_window_models_preserve_rows_and_report_column_work():
-    spec = MatrixSpec(source="synthetic", M=136, K=512, density=0.1, seed=1)
+    spec = MatrixInput(source="synthetic", M=136, K=512, density=0.1, seed=1)
     counts = np.array([250] + [12] * 134 + [0], dtype=np.int64)
     profile = MatrixProfile(spec, 136, 512, counts, "manual")
     baseline = estimate_storage(profile, FormatSpec(name="slice_ell", columns=8))
@@ -74,7 +74,7 @@ def test_window_models_preserve_rows_and_report_column_work():
 
 
 def test_equal_nnz_boundaries_are_nonempty_even_with_empty_rows():
-    spec = MatrixSpec(source="synthetic", M=128, K=512, density=0.1)
+    spec = MatrixInput(source="synthetic", M=128, K=512, density=0.1)
     counts = np.zeros(128, dtype=np.int64)
     counts[:8] = 400
     profile = MatrixProfile(spec, 128, 512, counts, "manual")
@@ -87,17 +87,21 @@ def test_equal_nnz_boundaries_are_nonempty_even_with_empty_rows():
 
 
 def test_one_csr_and_vector_feed_existing_format_adapters():
-    matrix = materialize_synthetic(
-        MatrixSpec(
-            source="synthetic",
-            M=64,
-            K=128,
-            density=0.1,
-            row_pattern="skewed",
-            seed=18,
-            x_seed=43,
-        )
+    matrix_input = MatrixInput(
+        source="synthetic",
+        M=64,
+        K=128,
+        density=0.1,
+        row_pattern="skewed",
+        seed=18,
+        x_seed=43,
     )
+    matrix = load_or_generate_csr(matrix_input)
+    direct = generate_synthetic_csr(matrix_input)
+    assert np.array_equal(matrix.indptr, direct.indptr)
+    assert np.array_equal(matrix.indices, direct.indices)
+    assert np.array_equal(matrix.values, direct.values)
+    assert torch.equal(matrix.vector, direct.vector)
     expected = cpu_spmv_csr(matrix.indptr, matrix.indices, matrix.values, matrix.vector)
     dense = pack_existing_format(matrix, FormatSpec(name="dense"))
     ell = pack_existing_format(matrix, FormatSpec(name="ell"))
@@ -139,8 +143,8 @@ def test_one_csr_and_vector_feed_existing_format_adapters():
 
 
 def test_design_selector_rejects_wrong_format_and_sell_packer_is_not_faked():
-    matrix = materialize_synthetic(
-        MatrixSpec(source="synthetic", M=64, K=64, density=0.1)
+    matrix = generate_synthetic_csr(
+        MatrixInput(source="synthetic", M=64, K=64, density=0.1)
     )
     with pytest.raises(ValueError, match="requires sell_c_sigma"):
         estimate_storage(
@@ -155,14 +159,14 @@ def test_safetensors_uses_canonical_csr_and_content_hash(tmp_path):
     weight = torch.tensor([[1.0, 0.0, 2.0], [0.0, -3.0, 0.0]], dtype=torch.bfloat16)
     path = tmp_path / "model.safetensors"
     safetensors.save_file({"weight": weight}, path)
-    spec = MatrixSpec(
+    spec = MatrixInput(
         source="safetensors", model_dir=str(tmp_path), tensor_name="weight", x_seed=7
     )
-    matrix = materialize_matrix(spec)
+    matrix = load_or_generate_csr(spec)
     assert matrix.profile.row_nnz.tolist() == [2, 1]
     assert matrix.indices.tolist() == [0, 2, 1]
     assert matrix.vector.dtype == torch.bfloat16
     assert torch.equal(pack_existing_format(matrix, FormatSpec(name="dense")), weight)
     safetensors.save_file({"weight": weight * 2}, path)
-    changed = materialize_matrix(spec)
+    changed = load_or_generate_csr(spec)
     assert matrix.profile.source_sha256 != changed.profile.source_sha256

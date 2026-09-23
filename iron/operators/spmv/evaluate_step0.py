@@ -9,7 +9,7 @@ This does not compile or run an NPU design.  Example::
       --synthetic 4096 4096 0.1 skewed 42 --format all
 
 The design selector checks format compatibility and reports implementation
-status.  Later steps can use the same MatrixSpec/FormatSpec/DesignSpec objects
+status.  Later steps can use the same MatrixInput/FormatSpec/DesignSpec objects
 for actual packing and NPU measurements.
 """
 
@@ -23,7 +23,7 @@ from pathlib import Path
 from iron.operators.spmv.evaluation import (
     DesignSpec,
     FormatSpec,
-    MatrixSpec,
+    MatrixInput,
     estimate_storage,
     safetensors_profile,
     synthetic_profile,
@@ -143,11 +143,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    specs: list[MatrixSpec] = []
+    specs: list[MatrixInput] = []
     for values in args.synthetic or []:
         M, K, density, pattern, seed = values
         specs.append(
-            MatrixSpec(
+            MatrixInput(
                 source="synthetic",
                 M=int(M),
                 K=int(K),
@@ -159,7 +159,7 @@ def main() -> None:
     if args.model_dir is not None:
         for name in args.weight or REPRESENTATIVE_WEIGHTS:
             specs.append(
-                MatrixSpec(
+                MatrixInput(
                     source="safetensors",
                     model_dir=str(args.model_dir),
                     tensor_name=name,

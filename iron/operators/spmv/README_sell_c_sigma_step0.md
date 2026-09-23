@@ -9,7 +9,8 @@
 
 ## 用意した共通入口
 
-- `evaluation.py`: `MatrixSpec` が合成行列またはsafetensorsの入力を指定する。`materialize_matrix()` はformatと独立なcanonical CSRと共通BF16 `x` を生成する。大行列のstorage sweepでは全CSRを作らず `MatrixProfile`（各行NNZ）だけ読む。
+- `evaluation.py`: `MatrixInput` が合成行列の生成条件、またはsafetensors tensorの読み込み元を指定する。`load_or_generate_csr()` はformatと独立な `CSRMatrix`（`indptr`、`indices`、`values`、共通BF16入力ベクトル `x`）を返す。合成行列だけを直接生成するときは `generate_synthetic_csr()` を使う。
+- 使用経路は、実体が必要なら `MatrixInput → load_or_generate_csr() → CSRMatrix → pack_existing_format()`。容量評価だけなら `MatrixInput → synthetic_profile() / safetensors_profile() → estimate_storage()` とし、大行列の全CSRを作らない。`canonical` は行・出力の元順序を表す語として使い、CSR型の名前には使わない。
 - `FormatSpec` と `pack_existing_format()` で、同一CSRから既存dense/ELL/Slice-ELLへ変換できる。SELL-C-σを選んだ場合はStep 1まで明示的に未実装エラーとし、Slice-ELLを偽って返さない。
 - `DesignSpec` はformatと実行方式の組を検査し、`existing` / `planned` / `unproven` を記録する。NPU dispatch自体は後続Stepで追加する。
 - `evaluate_step0.py` は行列生成・format評価をNPU実行から分離し、matrix recipe ID、実tensor SHA-256（合成行列ではseed/生成条件と行NNZから作る再現用hash）、format ID、全設定、storage、負荷をJSONLに記録できる。短い表の表示も可能。
