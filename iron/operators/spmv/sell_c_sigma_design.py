@@ -13,19 +13,22 @@ from aie.helpers.dialects.scf import _for as range_
 from aie.helpers.taplib import TensorAccessPattern
 from aie.iron import Buffer, Kernel, ObjectFifo, Program, Runtime, TaskGroup, Worker
 from aie.iron.device import Tile
+from iron.operators.spmv.sell_c_sigma_layout import SELLCoreLayout
 
 
-def _layout(M: int, columns: int, windows: int) -> tuple[int, int, int]:
-    """Return rows/window, slices/column, and windows/column for B_h=8."""
+def _layout(M: int, columns: int, windows: int, block_height: int = 8) -> tuple[int, int, int]:
+    """Return rows/window, slices/column, and windows/column."""
 
     if columns not in (1, 8) or windows not in (columns, 2 * columns):
         raise ValueError("Step 2 supports 1 or 8 columns and 1 or 2 windows per column")
-    if M <= 0 or M % (8 * windows):
-        raise ValueError("M must be divisible by 8 * window_count")
+    if M <= 0 or M % (block_height * windows):
+        raise ValueError("M must be divisible by block_height * window_count")
     rows_per_window = M // windows
+    if rows_per_window % 2:
+        raise ValueError("a BF16 window transfer must have an even number of rows")
     if rows_per_window > 65535:
         raise ValueError("Step 2 uint16 row map needs at most 65535 rows/window")
-    return rows_per_window, M // (8 * columns), windows // columns
+    return rows_per_window, M // (block_height * columns), windows // columns
 
 
 def sell_reorder_route(dev, M: int, columns: int, windows: int):
@@ -144,7 +147,8 @@ def sell_reorder_route(dev, M: int, columns: int, windows: int):
     return Program(dev, runtime, workers=workers).resolve_program()
 
 
-def sell_spmv_dedicated(dev, M: int, K: int, blocks_per_column, windows: int):
+def sell_spmv_dedicated(dev, M: int, K: int, blocks_per_column, windows: int,
+                        rows_per_core=(2, 3, 3)):
     """Step 3: three SpMV cores and one dedicated reorder core in each column.
 
     The two shim inputs are packed A and a control stream.  Each control
@@ -152,24 +156,28 @@ def sell_spmv_dedicated(dev, M: int, K: int, blocks_per_column, windows: int):
     the MemTile splits these into independent fixed-length core FIFOs.
     """
 
+    core_layout = SELLCoreLayout(tuple(int(n) for n in rows_per_core))
+    block_height = core_layout.block_height
     blocks_per_column = tuple(int(n) for n in blocks_per_column)
     columns = len(blocks_per_column)
-    rows_per_window, slices_per_column, windows_per_column = _layout(M, columns, windows)
+    rows_per_window, slices_per_column, windows_per_column = _layout(
+        M, columns, windows, block_height,
+    )
     if K <= 0 or K > 65535 or any(n < 0 for n in blocks_per_column):
         raise ValueError("K must fit uint16 and block counts must be nonnegative")
-    slices_per_window = rows_per_window // 8
+    slices_per_window = rows_per_window // block_height
     config_words = 2 + K + slices_per_window
     config_words += config_words % 2  # 4-byte ObjectFIFO DMA alignment.
     control_words = config_words + rows_per_window
-    words_per_block = 8 * 256 * 2
+    words_per_block = block_height * 256 * 2
     total_blocks = sum(blocks_per_column)
 
     bf16 = np.dtype[bfloat16]
     i16 = np.dtype[np.int16]
-    a_types = [np.ndarray[(rows * 512,), bf16] for rows in (2, 3, 3)]
-    y_types = [np.ndarray[(rows,), bf16] for rows in (2, 4, 4)]
+    a_types = [np.ndarray[(rows * 512,), bf16] for rows in core_layout.rows_per_core]
+    y_types = [np.ndarray[(slots,), bf16] for slots in core_layout.output_slots]
     l2_a = np.ndarray[(words_per_block,), bf16]
-    l2_y = np.ndarray[(10,), bf16]
+    l2_y = np.ndarray[(core_layout.joined_slots,), bf16]
     l2_control = np.ndarray[(control_words,), i16]
     l1_config = np.ndarray[(config_words,), i16]
     l1_map = np.ndarray[(rows_per_window,), i16]
@@ -180,13 +188,21 @@ def sell_spmv_dedicated(dev, M: int, K: int, blocks_per_column, windows: int):
     l3_output = np.ndarray[(M,), bf16]
 
     init = Kernel("sell_state_init", "sell_c_sigma.o", [l1_state])
-    accumulate2 = Kernel("sell_accumulate2", "sell_c_sigma.o", [a_types[0], l1_config, l1_state])
-    accumulate3 = Kernel("sell_accumulate3", "sell_c_sigma.o", [a_types[1], l1_config, l1_state])
-    finalize2 = Kernel("sell_finalize2", "sell_c_sigma.o", [l1_state, y_types[0]])
-    finalize3 = Kernel("sell_finalize3", "sell_c_sigma.o", [l1_state, y_types[1]])
-    accumulate = (accumulate2, accumulate3, accumulate3)
-    finalize = (finalize2, finalize3, finalize3)
-    scatter = Kernel("sell_reorder_scatter8", "sell_c_sigma.o", [l2_y, l1_map, l1_output, np.int32])
+    # Construct each distinct kernel symbol only once (MLIR rejects duplicates).
+    accumulate_by_rows = {
+        rows: Kernel(f"sell_accumulate{rows}", "sell_c_sigma.o",
+                     [np.ndarray[(rows * 512,), bf16], l1_config, l1_state])
+        for rows in set(core_layout.rows_per_core)
+    }
+    finalize_by_rows = {
+        rows: Kernel(f"sell_finalize{rows}", "sell_c_sigma.o",
+                     [l1_state, np.ndarray[(rows + rows % 2,), bf16]])
+        for rows in set(core_layout.rows_per_core)
+    }
+    scatter = Kernel(
+        "sell_reorder_scatter", "sell_c_sigma.o",
+        [l2_y, l1_map, l1_output] + [np.int32] * 6,
+    )
     zero_output = Kernel("sell_zero_output", "sell_c_sigma.o", [l1_output, np.int32])
 
     a_fifos, control_fifos, output_fifos, workers = [], [], [], []
@@ -201,11 +217,11 @@ def sell_spmv_dedicated(dev, M: int, K: int, blocks_per_column, windows: int):
         output_fifos.append(output)
 
         a_cores = a_col.cons().split(
-            [0, 2 * 512, 5 * 512], obj_types=a_types, tile=mem,
+            core_layout.a_offsets, obj_types=a_types, tile=mem,
             depths=[2, 2, 2], names=[f"sell_a_{col}_{row}" for row in range(3)],
         )
         y_cores = joined.prod().join(
-            [0, 2, 6], obj_types=y_types, tile=mem,
+            core_layout.output_offsets, obj_types=y_types, tile=mem,
             names=[f"sell_y_{col}_{row}" for row in range(3)],
         )
         config_fifo, map_fifo = control_col.cons().split(
@@ -231,10 +247,11 @@ def sell_spmv_dedicated(dev, M: int, K: int, blocks_per_column, windows: int):
 
         for row in range(3):
             state = Buffer(l1_state, name=f"sell_state_{col}_{row}")
+            owned_rows = core_layout.rows_per_core[row]
             workers.append(Worker(
                 compute_body,
                 [a_cores[row].cons(), config_fifo.cons(), y_cores[row].prod(), state,
-                 init, accumulate[row], finalize[row]],
+                 init, accumulate_by_rows[owned_rows], finalize_by_rows[owned_rows]],
                 tile=Tile(col, 2 + row), stack_size=2048, dynamic_objfifo_lowering=True,
             ))
 
@@ -245,7 +262,12 @@ def sell_spmv_dedicated(dev, M: int, K: int, blocks_per_column, windows: int):
                 clear_kernel(canonical, rows_per_window)
                 for local_slice in range_(slices_per_window):
                     physical = joined_input.acquire(1)
-                    reorder_kernel(physical, mapping, canonical, local_slice)
+                    reorder_kernel(
+                        physical, mapping, canonical, local_slice,
+                        core_layout.rows_per_core[0], core_layout.rows_per_core[1],
+                        core_layout.rows_per_core[2],
+                        core_layout.output_slots[0], core_layout.output_slots[1],
+                    )
                     joined_input.release(1)
                 map_input.release(1)
                 canonical_output.release(1)

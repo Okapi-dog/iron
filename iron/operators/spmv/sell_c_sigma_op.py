@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 import aie.utils as aie_utils
 import numpy as np
+from iron.operators.spmv.sell_c_sigma_layout import SELLCoreLayout
 
 from iron.common import (
     AIERuntimeArgSpec,
@@ -68,15 +69,19 @@ class SpMVSELLDedicated(MLIROperator):
     K: int
     blocks_per_column: tuple[int, ...]
     windows: int
+    rows_per_core: tuple[int, int, int] = (2, 3, 3)
     context: object | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.blocks_per_column = tuple(int(n) for n in self.blocks_per_column)
+        self.rows_per_core = tuple(int(n) for n in self.rows_per_core)
+        layout = SELLCoreLayout(self.rows_per_core)
         columns = len(self.blocks_per_column)
         if columns not in (1, 8) or self.windows not in (columns, 2 * columns):
             raise ValueError("dedicated design supports 1 or 8 columns and 1 or 2 windows/column")
-        if self.M <= 0 or self.M % (8 * self.windows) or not 0 < self.K <= 65535:
-            raise ValueError("M must divide into 8-row windows, and K must fit uint16")
+        if (self.M <= 0 or self.M % (layout.block_height * self.windows)
+                or self.M // self.windows % 2 or not 0 < self.K <= 65535):
+            raise ValueError("M needs even-length fixed windows of complete slices, and K must fit uint16")
         if self.M // self.windows > 65535 or any(n <= 0 for n in self.blocks_per_column):
             raise ValueError("window map must fit uint16 and each column needs A blocks")
         super().__init__(context=self.context)
@@ -84,7 +89,7 @@ class SpMVSELLDedicated(MLIROperator):
     @property
     def config_words(self) -> int:
         """Size of the Slice-ELL config in one window, rounded to 4 bytes."""
-        words = 2 + self.K + self.M // (8 * self.windows)
+        words = 2 + self.K + self.M // (SELLCoreLayout(self.rows_per_core).block_height * self.windows)
         return words + words % 2
 
     @property
@@ -99,7 +104,7 @@ class SpMVSELLDedicated(MLIROperator):
                 self.operator_dir / "sell_c_sigma_design.py",
                 "sell_spmv_dedicated",
                 (aie_utils.get_current_device(), self.M, self.K,
-                 self.blocks_per_column, self.windows),
+                 self.blocks_per_column, self.windows, self.rows_per_core),
             ),
         )
 
@@ -111,7 +116,9 @@ class SpMVSELLDedicated(MLIROperator):
 
     def get_arg_spec(self):
         return [
-            AIERuntimeArgSpec("in", (sum(self.blocks_per_column) * 8 * 256 * 2,)),
+            AIERuntimeArgSpec(
+                "in", (sum(self.blocks_per_column) * SELLCoreLayout(self.rows_per_core).block_height * 256 * 2,)
+            ),
             AIERuntimeArgSpec(
                 "in", (self.windows * self.control_words,), dtype=np.dtype(np.int16),
             ),

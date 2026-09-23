@@ -25,6 +25,7 @@ from iron.operators.spmv.slice_ell import (
     csr_to_slice_ell,
     dense_to_slice_ell,
 )
+from iron.operators.spmv.sell_c_sigma_layout import SELLCoreLayout
 
 
 def _csr(counts, K=97):
@@ -43,6 +44,35 @@ def _check_reference(packed, pointers, indices, values, K):
     expected = cpu_spmv_csr(pointers, indices, values, x)
     assert torch.allclose(canonical.float(), expected.float(), atol=0.05, rtol=0.05)
     return physical, canonical
+
+
+@pytest.mark.parametrize(
+    "rows_per_core,output_slots",
+    [
+        ((1, 1, 1), (2, 2, 2)),
+        ((2, 2, 2), (2, 2, 2)),
+        ((2, 3, 3), (2, 4, 4)),
+        ((3, 3, 3), (4, 4, 4)),
+        ((4, 4, 4), (4, 4, 4)),
+    ],
+)
+def test_compute_layout_and_even_window_dma(rows_per_core, output_slots):
+    layout = SELLCoreLayout(rows_per_core)
+    assert layout.output_slots == output_slots
+    assert layout.joined_slots == sum(output_slots)
+    counts = np.arange(101, dtype=np.int64) % 17
+    pointers, indices, values, K = _csr(counts)
+    packed = csr_to_slice_ell(
+        pointers, indices, values, K=K,
+        config=SliceELLConfig(
+            core_rows=3 if layout.block_height % 3 == 0 else 4,
+            block_height=layout.block_height, block_width=32,
+            shim_columns=8, window_count=8,
+        ),
+    )
+    assert packed.padded_rows % (layout.block_height * 8) == 0
+    assert (packed.padded_rows // 8) % 2 == 0
+    _check_reference(packed, pointers, indices, values, K)
 
 
 def test_disabled_sort_preserves_old_payload_bitwise():

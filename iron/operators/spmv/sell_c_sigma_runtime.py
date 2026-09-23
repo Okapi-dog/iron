@@ -7,9 +7,11 @@ import numpy as np
 import torch
 
 from iron.operators.spmv.slice_ell import PackedSliceELL
+from iron.operators.spmv.sell_c_sigma_layout import SELLCoreLayout
 
 
-def make_dedicated_inputs(packed: PackedSliceELL, x: torch.Tensor):
+def make_dedicated_inputs(packed: PackedSliceELL, x: torch.Tensor,
+                          rows_per_core=(2, 3, 3)):
     """Return packed A, fixed-length control stream, and A blocks/column.
 
     Each control window is ``[2 header words | BF16 x | p per slice | pad |
@@ -18,20 +20,23 @@ def make_dedicated_inputs(packed: PackedSliceELL, x: torch.Tensor):
     """
 
     config = packed.config
-    if (config.core_rows, config.block_height, config.block_width) != (4, 8, 256):
-        raise ValueError("dedicated design requires R=4, B_h=8, B_w=256")
+    layout = SELLCoreLayout(tuple(int(n) for n in rows_per_core))
+    if (config.block_height, config.block_width) != (layout.block_height, 256):
+        raise ValueError("packed B_h must match the core layout and B_w must be 256")
     if packed.window_count not in (config.shim_columns, 2 * config.shim_columns):
         raise ValueError("one or two windows per column are required")
     if packed.row_indices is None or packed.row_indices.dtype != np.uint16:
         raise ValueError("dedicated design requires a uint16 window-local row map")
-    if packed.padded_rows % (8 * packed.window_count):
+    if packed.padded_rows % (layout.block_height * packed.window_count):
         raise ValueError("NPU ABI requires equal-size padded windows")
     if x.numel() != packed.K:
         raise ValueError("x length must equal K")
 
     windows = packed.window_count
     rows_per_window = packed.padded_rows // windows
-    slices_per_window = rows_per_window // 8
+    if rows_per_window % 2:
+        raise ValueError("BF16 output and uint16 row-map DMA need an even-length window")
+    slices_per_window = rows_per_window // layout.block_height
     config_words = 2 + packed.K + slices_per_window
     config_words += config_words % 2
     control_words = config_words + rows_per_window

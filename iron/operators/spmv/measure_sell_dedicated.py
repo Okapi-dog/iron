@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Compare 24-core SELL/reorder with 32-core physical-output Slice-ELL.
+"""Measure selectable 3-core/column SELL layouts on the same input matrix.
 
-All three runs consume the *same packed A* and x.  The 24-core identity-map
-run returns physical y' and isolates the cost of nontrivial scatter.  The
-32-core old design also returns physical y', while 24-core SELL returns y.
-The comparison is architectural, not a row-sort-vs-no-sort A-traffic study.
+Within one run, identity-map and canonical-output tests consume the same
+packed A and x.  For B_h=8, the 32-core old design is also measured on the
+same A, but returns physical y'.  Different B_h values have different packed
+A sizes, so cross-run latency is not an isolated core-layout comparison.
 """
 
 import argparse
@@ -18,6 +18,7 @@ from iron.common.test_utils import run_test
 from iron.operators.spmv.op import SpMVSliceELLDynamicScalarMultiCol
 from iron.operators.spmv.sell_c_sigma_op import SpMVSELLDedicated
 from iron.operators.spmv.sell_c_sigma_runtime import make_dedicated_inputs
+from iron.operators.spmv.sell_c_sigma_layout import SELLCoreLayout
 from iron.operators.spmv.slice_ell import (
     SliceELLConfig, cpu_spmv_csr, cpu_spmv_slice_ell, csr_to_slice_ell,
 )
@@ -45,8 +46,11 @@ def main():
     parser.add_argument("--M", type=int, default=4096)
     parser.add_argument("--K", type=int, default=4096)
     parser.add_argument("--seed", type=int, default=73)
+    parser.add_argument("--rows-per-core", nargs=3, type=int, default=(2, 3, 3),
+                        metavar=("CORE0", "CORE1", "CORE2"))
     args = parser.parse_args()
     M, K = args.M, args.K
+    layout = SELLCoreLayout(tuple(args.rows_per_core))
     if M % 64 or K < 512:
         raise ValueError("this experiment needs M divisible by 64 and K >= 512")
 
@@ -60,34 +64,44 @@ def main():
     packed = csr_to_slice_ell(
         pointers, indices, values, K=K,
         config=SliceELLConfig(
-            core_rows=4, block_height=8, block_width=256,
+            core_rows=4 if layout.block_height == 8 else 3,
+            block_height=layout.block_height, block_width=256,
             shim_columns=8, window_count=8,
         ),
     )
     x = torch.rand(K, generator=torch.Generator().manual_seed(args.seed + 1)).to(torch.bfloat16)
-    A, control, block_counts = make_dedicated_inputs(packed, x)
-    physical = cpu_spmv_slice_ell(packed, x)
-    canonical = cpu_spmv_csr(pointers, indices, values, x)
+    A, control, block_counts = make_dedicated_inputs(packed, x, layout.rows_per_core)
+    physical = torch.zeros(packed.padded_rows, dtype=torch.bfloat16)
+    physical[:M] = cpu_spmv_slice_ell(packed, x)
+    canonical = torch.zeros_like(physical)
+    canonical[:M] = cpu_spmv_csr(pointers, indices, values, x)
 
     # The row map is the only difference between the two 24-core runs.
     identity_control = control.clone()
-    window_rows = M // 8
+    window_rows = packed.padded_rows // 8
     control_words = identity_control.numel() // 8
     config_words = control_words - window_rows
     for window in range(8):
         first = window * control_words + config_words
         identity_control[first : first + window_rows] = torch.arange(window_rows, dtype=torch.int16)
 
-    experiments = (
-        ("24-core physical", SpMVSELLDedicated(M, K, block_counts, 8),
-         {"packed": A, "control": identity_control}, physical),
-        ("24-core canonical", SpMVSELLDedicated(M, K, block_counts, 8),
-         {"packed": A, "control": control}, canonical),
-        ("32-core physical", SpMVSliceELLDynamicScalarMultiCol(
-            M=M, K=K, blocks_per_column=block_counts, block_height=8,
-        ), {"packed": A, "config": make_32core_config(packed, x)}, physical),
+    operator = SpMVSELLDedicated(
+        packed.padded_rows, K, block_counts, 8, rows_per_core=layout.rows_per_core,
     )
-    print(f"M={M} K={K} seed={args.seed} packed_A_bytes={packed.packed_a.nbytes}")
+    experiments = [
+        ("24-core physical", operator,
+         {"packed": A, "control": identity_control}, physical),
+        ("24-core canonical", operator,
+         {"packed": A, "control": control}, canonical),
+    ]
+    if layout.block_height == 8:
+        experiments.append((
+            "32-core physical", SpMVSliceELLDynamicScalarMultiCol(
+                M=packed.padded_rows, K=K, blocks_per_column=block_counts, block_height=8,
+            ), {"packed": A, "config": make_32core_config(packed, x)}, physical,
+        ))
+    print(f"M={M} K={K} padded_M={packed.padded_rows} seed={args.seed} "
+          f"rows_per_core={layout.rows_per_core} packed_A_bytes={packed.packed_a.nbytes}")
     for label, operator, inputs, expected in experiments:
         errors, latency_us, bandwidth = run_test(
             operator, inputs, {"output": expected}, rel_tol=0.08, abs_tol=0.025,

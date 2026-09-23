@@ -274,6 +274,12 @@ def csr_to_slice_ell(
 
     logical_slices = (M + config.block_height - 1) // config.block_height
     slices_per_column = (logical_slices + config.shim_columns - 1) // config.shim_columns
+    if config.window_count and config.block_height % 2:
+        # A BF16 output window and its uint16 map each need a 4-byte DMA
+        # length.  For odd B_h, pad to an even number of slices per window.
+        windows_per_column = max(1, config.window_count // config.shim_columns)
+        alignment = 2 * windows_per_column
+        slices_per_column = (slices_per_column + alignment - 1) // alignment * alignment
     total_slices = slices_per_column * config.shim_columns
     padded_rows = total_slices * config.block_height
     blocks_per_slice = np.zeros(total_slices, dtype=np.uint16)

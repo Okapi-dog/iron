@@ -36,8 +36,8 @@ extern "C" void sell_reorder_scatter8(
   }
 }
 
-// Step 3: the existing Slice-ELL scalar-state method, specialized to the
-// (2,3,3) producer geometry.  The x vector starts after two int16 words.
+// Step 3: the existing Slice-ELL scalar-state method.  The row count of each
+// producer is selected by its kernel symbol.  x starts after two int16 words.
 extern "C" void sell_state_init(float *state) {
   for (unsigned row = 0; row < 4; ++row)
     state[row] = 0.0f;
@@ -67,6 +67,11 @@ static void sell_accumulate_rows(
   }
 }
 
+extern "C" void sell_accumulate1(
+    const bfloat16 *packed, const int16_t *config_words, float *state) {
+  sell_accumulate_rows<1>(packed, config_words, state);
+}
+
 extern "C" void sell_accumulate2(
     const bfloat16 *packed, const int16_t *config_words, float *state) {
   sell_accumulate_rows<2>(packed, config_words, state);
@@ -75,6 +80,17 @@ extern "C" void sell_accumulate2(
 extern "C" void sell_accumulate3(
     const bfloat16 *packed, const int16_t *config_words, float *state) {
   sell_accumulate_rows<3>(packed, config_words, state);
+}
+
+extern "C" void sell_accumulate4(
+    const bfloat16 *packed, const int16_t *config_words, float *state) {
+  sell_accumulate_rows<4>(packed, config_words, state);
+}
+
+extern "C" void sell_finalize1(const float *state, bfloat16 *output) {
+  ::aie::set_rounding(aie::rounding_mode::conv_even);
+  output[0] = static_cast<bfloat16>(state[0]);
+  output[1] = static_cast<bfloat16>(0);
 }
 
 extern "C" void sell_finalize2(const float *state, bfloat16 *output) {
@@ -88,4 +104,33 @@ extern "C" void sell_finalize3(const float *state, bfloat16 *output) {
   for (unsigned row = 0; row < 3; ++row)
     output[row] = static_cast<bfloat16>(state[row]);
   output[3] = static_cast<bfloat16>(0);
+}
+
+extern "C" void sell_finalize4(const float *state, bfloat16 *output) {
+  ::aie::set_rounding(aie::rounding_mode::conv_even);
+  for (unsigned row = 0; row < 4; ++row)
+    output[row] = static_cast<bfloat16>(state[row]);
+}
+
+// Skip a core's alignment padding while scattering physical rows to their
+// original positions.  The local map uses 0xffff for final padded rows.
+extern "C" void sell_reorder_scatter(
+    const bfloat16 *joined, const int16_t *row_indices,
+    bfloat16 *canonical_window, int32_t slice_in_window,
+    int32_t rows0, int32_t rows1, int32_t rows2,
+    int32_t slots0, int32_t slots1) {
+  const unsigned height = static_cast<unsigned>(rows0 + rows1 + rows2);
+  const unsigned base = static_cast<unsigned>(slice_in_window) * height;
+  for (unsigned row = 0; row < height; ++row) {
+    unsigned source;
+    if (row < static_cast<unsigned>(rows0))
+      source = row;
+    else if (row < static_cast<unsigned>(rows0 + rows1))
+      source = static_cast<unsigned>(slots0) + row - rows0;
+    else
+      source = static_cast<unsigned>(slots0 + slots1) + row - rows0 - rows1;
+    const unsigned destination = static_cast<uint16_t>(row_indices[base + row]);
+    if (destination != 0xffff)
+      canonical_window[destination] = joined[source];
+  }
 }

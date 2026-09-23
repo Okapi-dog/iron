@@ -179,3 +179,26 @@ export PYTHONPATH="$PWD:$PYTHONPATH"
 ```
 
 上記回帰テストは **30 passed**。NPU compileの生成物は `build/<operator-name>.mlir.d/input_with_addresses.mlir` で確認できる。
+
+## Step 3 追補 — 計算coreの行分割を設定化
+
+現行の8行slice `(2,3,3)` はデフォルトのまま維持した。`SELLCoreLayout.rows_per_core` を3計算coreの唯一の行数設定とし、`B_h=sum(rows_per_core)`、AのMemTile split offset、各coreのA FIFO型、出力FIFOの転送スロット数、MemTile join offset、reorder scatterの実データ位置を導出する。出力スロット数は各coreについて `rows + rows % 2` BF16。3行なら4要素転送し、末尾1要素をdummyとする。**計算する行数まで4になるわけではない**。MemTileはjoined objectを2個持ち、reorder coreはdummyを読み飛ばす。現行8行ではjoinedは `2+4+4=10` BF16（20 B/object、ping-pong 40 B）で、実出力8行に対するdummyは2要素。
+
+`(1,1,1)→B_h=3`、`(2,2,2)→6`、`(2,3,3)→8`、`(3,3,3)→9`、`(4,4,4)→12` を設定可能にした。6/12行はcore間の計算行数が同じで、出力の転送paddingもない。9行では各coreに1 dummyが必要。奇数 `B_h` のwindowはBF16出力とuint16 row mapの4-byte DMA長を保つため、packerが各windowのslice数を偶数に丸める。末尾の追加行はsentinel mapとzero出力で処理する。この丸めはwindowed/奇数 `B_h` の場合だけで、以前の8行形式は変更しない。
+
+ws007実機でデフォルト8行、8行の別分割 `(3,2,3)`、均等な3/6/9/12行、9行の16 windowをCPU CSR参照と照合した。関連する `test_evaluation.py` も含めた最終回帰は **47 passed、1 skipped**。以下は同じseed 73の合成CSR `4096×4096`、8列・8 window、canonical出力の一度の短時間測定。形式ごとにpacked Aとpadding行数が違うため、**行分割だけの純粋な速度差ではない**。現行8行の計測が以前の約182–184 µsに対して178 µsで、大きな性能後退は見えなかった。
+
+| 行数/core | `B_h` | padded M | packed A bytes | canonical latency |
+|---|---:|---:|---:|---:|
+| 2/3/3 | 8 | 4096 | 4,489,216 | 178.35 µs |
+| 2/2/2 | 6 | 4128 | 4,491,264 | 172.46 µs |
+| 3/3/3 | 9 | 4176 | 4,497,408 | 173.86 µs |
+| 4/4/4 | 12 | 4128 | 4,521,984 | 180.23 µs |
+
+同じ行列・seedで繰り返し測定し、packed A容量と転送量も併記してからデフォルト値を選ぶ。現時点では8行を変えず、均等分割は選択肢として提供する。
+
+```bash
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
+  -m iron.operators.spmv.measure_sell_dedicated \
+  --M 4096 --K 4096 --seed 73 --rows-per-core 2 2 2
+```

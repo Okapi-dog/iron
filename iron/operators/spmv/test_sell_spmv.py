@@ -37,22 +37,30 @@ def make_matrix(M: int, K: int, pattern: str):
 
 
 @pytest.mark.parametrize(
-    "M,K,columns,windows,pattern",
+    "M,K,columns,windows,pattern,rows_per_core",
     [
-        (64, 512, 1, 1, "identity"),
-        (64, 512, 1, 1, "reverse"),
-        (64, 512, 1, 1, "zero_slice"),
-        (1024, 512, 8, 8, "random"),
-        (1024, 512, 8, 16, "random"),
-        (1021, 512, 8, 8, "random"),
+        (64, 512, 1, 1, "identity", (2, 3, 3)),
+        (64, 512, 1, 1, "reverse", (2, 3, 3)),
+        (64, 512, 1, 1, "zero_slice", (2, 3, 3)),
+        (1024, 512, 8, 8, "random", (2, 3, 3)),
+        (1024, 512, 8, 16, "random", (2, 3, 3)),
+        (1021, 512, 8, 8, "random", (2, 3, 3)),
+        (1024, 512, 8, 8, "random", (3, 2, 3)),
+        (1024, 512, 8, 8, "random", (1, 1, 1)),
+        (1024, 512, 8, 8, "random", (2, 2, 2)),
+        (1024, 512, 8, 8, "random", (3, 3, 3)),
+        (1024, 512, 8, 16, "random", (3, 3, 3)),
+        (1024, 512, 8, 8, "random", (4, 4, 4)),
     ],
 )
-def test_sell_dedicated_matches_csr(aie_context, M, K, columns, windows, pattern):
+def test_sell_dedicated_matches_csr(aie_context, M, K, columns, windows, pattern, rows_per_core):
     pointers, indices, values = make_matrix(M, K, pattern)
+    block_height = sum(rows_per_core)
     packed = csr_to_slice_ell(
         pointers, indices, values, K=K,
         config=SliceELLConfig(
-            core_rows=4, block_height=8, block_width=256,
+            core_rows=4 if block_height == 8 else 3,
+            block_height=block_height, block_width=256,
             shim_columns=columns, window_count=windows,
         ),
     )
@@ -61,9 +69,10 @@ def test_sell_dedicated_matches_csr(aie_context, M, K, columns, windows, pattern
     elif pattern == "reverse":
         assert np.array_equal(packed.row_indices, np.arange(M - 1, -1, -1))
     x = torch.rand(K, generator=torch.Generator().manual_seed(61)).to(torch.bfloat16)
-    A, control, block_counts = make_dedicated_inputs(packed, x)
+    A, control, block_counts = make_dedicated_inputs(packed, x, rows_per_core)
     operator = SpMVSELLDedicated(
         M=packed.padded_rows, K=K, blocks_per_column=block_counts, windows=windows,
+        rows_per_core=rows_per_core,
         context=aie_context,
     )
     expected = torch.zeros(packed.padded_rows, dtype=torch.bfloat16)
@@ -73,5 +82,5 @@ def test_sell_dedicated_matches_csr(aie_context, M, K, columns, windows, pattern
         rel_tol=0.08, abs_tol=0.025, warmup_iters=2, timed_iters=5,
     )
     assert not errors, errors
-    print(f"Step 3 canonical-output latency: {M}x{K}, {columns} columns, "
+    print(f"Step 3 canonical-output latency: {M}x{K}, B_h={block_height}, {columns} columns, "
           f"{windows} windows, {pattern}: {latency_us:.2f} us")
