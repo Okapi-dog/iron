@@ -3,8 +3,8 @@
 
 """NPU-independent matrix, format, and design selection for SpMV experiments.
 
-Step 0 models storage and column work only.  In particular, a storage estimate
-for SELL-C-sigma does not imply that its NPU kernel has been implemented.
+The storage model and Step-1 SELL packer are CPU-only; neither implies that a
+SELL-C-sigma NPU kernel or reorder data path has been implemented.
 """
 
 from __future__ import annotations
@@ -74,8 +74,8 @@ class FormatSpec:
     def __post_init__(self) -> None:
         if self.block_height <= 0 or self.block_width <= 0 or self.columns <= 0:
             raise ValueError("block_height, block_width, and columns must be positive")
-        if self.window_count <= 0 or self.ell_alignment <= 0:
-            raise ValueError("window_count and ell_alignment must be positive")
+        if self.ell_alignment <= 0:
+            raise ValueError("ell_alignment must be positive")
         if self.name not in (
             "dense",
             "ell",
@@ -84,6 +84,10 @@ class FormatSpec:
             "global_sort_bound",
         ):
             raise ValueError(f"unsupported format: {self.name}")
+        if self.name != "sell_c_sigma":
+            object.__setattr__(self, "window_count", 0)
+        elif self.window_count <= 0:
+            raise ValueError("SELL window_count must be positive")
         if self.name == "sell_c_sigma" and self.window_count < self.columns:
             raise ValueError("SELL needs at least one window per active column")
 
@@ -282,11 +286,7 @@ def load_or_generate_csr(spec: MatrixInput) -> CSRMatrix:
 
 
 def pack_existing_format(matrix: CSRMatrix, fmt: FormatSpec):
-    """Use one canonical CSR for existing dense/ELL/Slice-ELL adapters.
-
-    SELL-C-sigma packing is intentionally deferred to Step 1.  Never return
-    row-preserving Slice-ELL payload under a SELL format ID.
-    """
+    """Pack the same CSR/x into a selected format, without NPU execution."""
 
     import torch
 
@@ -326,7 +326,16 @@ def pack_existing_format(matrix: CSRMatrix, fmt: FormatSpec):
             words[row, 0, :count] = matrix.indices[begin:end]
             words[row, 1, :count] = bits[begin:end]
         return _words_to_bf16(words.reshape(-1))
-    if fmt.name == "slice_ell":
+    if fmt.name in ("slice_ell", "sell_c_sigma"):
+        if fmt.name == "sell_c_sigma" and fmt.assignment_policy != "contiguous":
+            raise NotImplementedError(
+                "balanced window assignment needs a future NPU/payload contract"
+            )
+        window_bounds = None
+        if fmt.name == "sell_c_sigma":
+            window_bounds = tuple(
+                int(x) for x in window_slice_bounds(matrix.profile, fmt)
+            )
         return csr_to_slice_ell(
             matrix.indptr,
             matrix.indices,
@@ -337,11 +346,22 @@ def pack_existing_format(matrix: CSRMatrix, fmt: FormatSpec):
                 block_height=fmt.block_height,
                 block_width=fmt.block_width,
                 shim_columns=fmt.columns,
+                window_count=fmt.window_count if fmt.name == "sell_c_sigma" else 0,
+                window_slice_boundaries=window_bounds,
             ),
         )
-    raise NotImplementedError(
-        f"{fmt.name} has no NPU packer in Step 0; implementation belongs to Step 1"
-    )
+    raise NotImplementedError(f"{fmt.name} is an offline storage bound, not a packer")
+
+
+def pack_for_design(matrix: CSRMatrix, fmt: FormatSpec, design: DesignSpec):
+    """Check format/design compatibility before choosing the shared packer.
+
+    The two planned SELL execution designs consume identical packed A only
+    when they use the same FormatSpec and input CSR; runtime wiring is separate.
+    """
+
+    design.validate_format(fmt)
+    return pack_existing_format(matrix, fmt)
 
 
 def synthetic_row_counts(spec: MatrixInput) -> np.ndarray:
@@ -554,11 +574,15 @@ def estimate_storage(
             "reorder_l1_min_bytes": profile.M * (2 + index_bytes),
         }
     else:
-        bounds = window_slice_bounds(profile, fmt)
+        logical_bounds = window_slice_bounds(profile, fmt)
+        bounds = logical_bounds.copy()
+        total_slices = (profile.M + fmt.block_height - 1) // fmt.block_height
+        padded_slices = ((total_slices + fmt.columns - 1) // fmt.columns) * fmt.columns
+        bounds[-1] = padded_slices
         window_blocks: list[int] = []
         window_rows: list[int] = []
         max_block = 0
-        for first, last in zip(bounds[:-1], bounds[1:]):
+        for first, last in zip(logical_bounds[:-1], logical_bounds[1:]):
             begin = int(first) * fmt.block_height
             end = min(int(last) * fmt.block_height, profile.M)
             sorted_counts = counts[begin:end][
@@ -583,6 +607,7 @@ def estimate_storage(
             "boundary_policy": fmt.boundary_policy,
             "assignment_policy": fmt.assignment_policy,
             "window_slice_bounds": bounds.tolist(),
+            "logical_window_slice_bounds": logical_bounds.tolist(),
             "window_rows": window_rows,
             "sigma_max_rows": sigma,
             "window_blocks": window_blocks,

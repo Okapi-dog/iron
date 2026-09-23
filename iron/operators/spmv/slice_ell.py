@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Offline format contract for row-order-preserving Slice-ELL.
+"""Offline format contract for Slice-ELL and window-sorted SELL-C-sigma.
 
 This module deliberately has no MLIR, XRT, or NPU dependency.  Phase 2 uses
 it to make the weight format, CPU reference, and host config object testable
@@ -45,6 +45,8 @@ class SliceELLConfig:
     block_width: int = 256
     lanes: int = LANES
     shim_columns: int = 8
+    window_count: int = 0
+    window_slice_boundaries: tuple[int, ...] | None = None
 
     # Reject a geometry that cannot map to the first NPU2 Slice-ELL design.
     def __post_init__(self) -> None:
@@ -58,6 +60,19 @@ class SliceELLConfig:
             raise ValueError("block_width must be a positive multiple of the lane count")
         if self.shim_columns <= 0:
             raise ValueError("shim_columns must be positive")
+        if self.window_count < 0:
+            raise ValueError("window_count must be nonnegative (0 disables row sort)")
+        if self.window_count not in (0, 1) and self.window_count % self.shim_columns:
+            raise ValueError("window_count must be 1 or a multiple of shim_columns")
+        if self.window_slice_boundaries is not None:
+            if self.window_count == 0 or len(self.window_slice_boundaries) != self.window_count + 1:
+                raise ValueError("window boundaries require one entry per window plus the endpoint")
+            if self.window_slice_boundaries[0] != 0 or any(
+                right <= left for left, right in zip(
+                    self.window_slice_boundaries[:-1], self.window_slice_boundaries[1:]
+                )
+            ):
+                raise ValueError("window slice boundaries must start at zero and increase")
 
     @property
     # Derive the number of rows owned by one core.
@@ -111,11 +126,17 @@ class PackedSliceELL:
     blocks_per_slice: np.ndarray
     slice_word_offsets: np.ndarray
     column_slice_offsets: np.ndarray
+    window_count: int = 0
+    window_slice_offsets: np.ndarray | None = None
+    row_indices: np.ndarray | None = None
 
     @property
     # Return the common number of contiguous slices assigned to each Shim column.
     def slices_per_column(self) -> int:
-        return int(self.column_slice_offsets[1] - self.column_slice_offsets[0])
+        counts = np.diff(self.column_slice_offsets)
+        if not np.all(counts == counts[0]):
+            raise ValueError("columns have unequal slice counts; fixed-length NPU ABI is unavailable")
+        return int(counts[0])
 
     @property
     # Return the number of slices including whole zero slices added for column balance.
@@ -138,9 +159,10 @@ class PackedSliceELL:
     def manifest(self) -> dict:
         """Return the static sidecar for optional raw-binary cache files."""
 
-        return {
-            "format": "row-order-preserving-slice-ell",
-            "format_version": FORMAT_VERSION,
+        column_counts = np.diff(self.column_slice_offsets)
+        result = {
+            "format": "windowed-sell-c-sigma" if self.window_count else "row-order-preserving-slice-ell",
+            "format_version": 2 if self.window_count else FORMAT_VERSION,
             "M": self.M,
             "K": self.K,
             "nnz": self.nnz,
@@ -148,7 +170,7 @@ class PackedSliceELL:
             "config": asdict(self.config),
             "core_height": self.config.core_height,
             "total_slices": self.total_slices,
-            "slices_per_column": self.slices_per_column,
+            "slices_per_column": int(column_counts[0]) if np.all(column_counts == column_counts[0]) else None,
             "column_slice_offsets": self.column_slice_offsets.tolist(),
             "slice_word_offsets": self.slice_word_offsets.tolist(),
             "blocks_per_slice_dtype": "uint16",
@@ -160,6 +182,16 @@ class PackedSliceELL:
             "packed_a_sha256": _sha256_words(self.packed_a),
             "blocks_per_slice_sha256": _sha256_words(self.blocks_per_slice),
         }
+        if self.window_count:
+            assert self.window_slice_offsets is not None and self.row_indices is not None
+            result.update({
+                "window_count": self.window_count,
+                "window_slice_offsets": self.window_slice_offsets.tolist(),
+                "row_indices_dtype": str(self.row_indices.dtype),
+                "row_indices_sha256": hashlib.sha256(self.row_indices.tobytes()).hexdigest(),
+                "row_index_sentinel": int(np.iinfo(self.row_indices.dtype).max),
+            })
+        return result
 
     # Optionally save raw-binary cache files; normal tests use this object in memory.
     def save_cache(self, directory: str | Path, stem: str = "slice_ell") -> dict[str, Path]:
@@ -172,8 +204,13 @@ class PackedSliceELL:
             "blocks_per_slice": directory / f"{stem}_blocks_per_slice.bin",
             "manifest": directory / f"{stem}_manifest.json",
         }
+        if self.window_count:
+            paths["row_indices"] = directory / f"{stem}_row_indices.bin"
         np.ascontiguousarray(self.packed_a, dtype="<u2").tofile(paths["packed_a"])
         np.ascontiguousarray(self.blocks_per_slice, dtype="<u2").tofile(paths["blocks_per_slice"])
+        if self.window_count:
+            assert self.row_indices is not None
+            self.row_indices.astype(self.row_indices.dtype.newbyteorder("<"), copy=False).tofile(paths["row_indices"])
         manifest = self.manifest() | {
             "storage_byte_order": "little",
             "payload_files": {name: path.name for name, path in paths.items() if name != "manifest"},
@@ -182,7 +219,30 @@ class PackedSliceELL:
         return paths
 
 
-# Convert a CSR matrix to the in-memory row-order-preserving Slice-ELL format.
+# Determine fixed slice boundaries before sorting; all offsets include padding slices.
+def _window_boundaries(logical_slices: int, total_slices: int, config: SliceELLConfig) -> np.ndarray:
+    if config.window_count == 0:
+        return np.asarray([0, total_slices], dtype=np.int64)
+    if config.window_slice_boundaries is not None:
+        bounds = np.asarray(config.window_slice_boundaries, dtype=np.int64).copy()
+        if bounds[-1] == logical_slices:
+            bounds[-1] = total_slices
+        elif bounds[-1] != total_slices:
+            raise ValueError("window boundaries must end at logical or padded slice count")
+    elif config.window_count == 1:
+        bounds = np.asarray([0, total_slices], dtype=np.int64)
+    else:
+        if config.window_count > total_slices:
+            raise ValueError("window_count exceeds padded slice count")
+        sizes = np.full(config.window_count, total_slices // config.window_count, dtype=np.int64)
+        sizes[: total_slices % config.window_count] += 1
+        bounds = np.concatenate(([0], sizes.cumsum()))
+    if np.any(np.diff(bounds) <= 0) or bounds[-1] != total_slices:
+        raise ValueError("every window needs at least one slice")
+    return bounds
+
+
+# Convert a CSR matrix to row-preserving Slice-ELL or window-sorted SELL-C-sigma.
 def csr_to_slice_ell(
     indptr: np.ndarray | Sequence[int],
     indices: np.ndarray | Sequence[int],
@@ -191,7 +251,7 @@ def csr_to_slice_ell(
     K: int,
     config: SliceELLConfig = SliceELLConfig(),
 ) -> PackedSliceELL:
-    """Pack a CSR matrix without reordering rows.
+    """Pack CSR; optionally sort rows by descending NNZ inside each window.
 
     The final incomplete slice and enough whole zero slices to distribute a
     contiguous slice range to every Shim column are appended.  Padding slots
@@ -217,13 +277,30 @@ def csr_to_slice_ell(
     total_slices = slices_per_column * config.shim_columns
     padded_rows = total_slices * config.block_height
     blocks_per_slice = np.zeros(total_slices, dtype=np.uint16)
+    window_bounds = _window_boundaries(logical_slices, total_slices, config)
+    physical_rows = np.full(padded_rows, -1, dtype=np.int64)
+    row_indices = None
+    row_lengths = np.diff(indptr)
+    if config.window_count:
+        max_window_rows = int(np.diff(window_bounds).max()) * config.block_height
+        index_dtype = np.uint16 if max_window_rows <= np.iinfo(np.uint16).max else np.uint32
+        row_indices = np.full(padded_rows, np.iinfo(index_dtype).max, dtype=index_dtype)
+        for first, last in zip(window_bounds[:-1], window_bounds[1:]):
+            base = int(first) * config.block_height
+            end = min(int(last) * config.block_height, M)
+            if end <= base:
+                continue
+            order = np.argsort(-row_lengths[base:end], kind="stable")
+            physical_rows[base : base + order.size] = base + order
+            row_indices[base : base + order.size] = order.astype(index_dtype)
+    else:
+        physical_rows[:M] = np.arange(M)
 
     for slice_id in range(total_slices):
         row_begin = slice_id * config.block_height
-        row_end = min(row_begin + config.block_height, M)
-        if row_begin >= M:
-            continue
-        max_nnz = int(max(indptr[row + 1] - indptr[row] for row in range(row_begin, row_end)))
+        source_rows = physical_rows[row_begin : row_begin + config.block_height]
+        source_rows = source_rows[source_rows >= 0]
+        max_nnz = int(row_lengths[source_rows].max(initial=0))
         p = (max_nnz + config.block_width - 1) // config.block_width
         if p > np.iinfo(np.uint16).max:
             raise ValueError("blocks_per_slice does not fit uint16")
@@ -243,9 +320,10 @@ def csr_to_slice_ell(
             slot_begin = block_id * config.block_width
             for core_row in range(config.core_rows):
                 for local_row in range(config.core_height):
-                    row = row_begin + core_row * config.core_height + local_row
+                    physical_row = row_begin + core_row * config.core_height + local_row
                     row_base = block_base + (core_row * config.core_height + local_row) * 2 * config.block_width
-                    if row < M:
+                    row = int(physical_rows[physical_row])
+                    if row >= 0:
                         start, stop = int(indptr[row]), int(indptr[row + 1])
                         take_begin = min(start + slot_begin, stop)
                         take_end = min(take_begin + config.block_width, stop)
@@ -254,7 +332,11 @@ def csr_to_slice_ell(
                             packed_a[row_base : row_base + count] = indices[take_begin:take_end].astype(np.uint16, copy=False)
                             value_base = row_base + config.block_width
                             packed_a[value_base : value_base + count] = value_bits[take_begin:take_end]
-    column_slice_offsets = np.arange(config.shim_columns + 1, dtype=np.uint32) * slices_per_column
+    if config.window_count > 1:
+        per_column = config.window_count // config.shim_columns
+        column_slice_offsets = window_bounds[::per_column].astype(np.uint32)
+    else:
+        column_slice_offsets = np.arange(config.shim_columns + 1, dtype=np.uint32) * slices_per_column
     return PackedSliceELL(
         M=M,
         K=K,
@@ -265,6 +347,9 @@ def csr_to_slice_ell(
         blocks_per_slice=blocks_per_slice,
         slice_word_offsets=slice_word_offsets,
         column_slice_offsets=column_slice_offsets,
+        window_count=config.window_count,
+        window_slice_offsets=window_bounds if config.window_count else None,
+        row_indices=row_indices,
     )
 
 
@@ -317,7 +402,7 @@ def cpu_spmv_csr(
 
 # Compute y = A*x on CPU by interpreting the packed Slice-ELL layout.
 def cpu_spmv_slice_ell(packed: PackedSliceELL, vector: torch.Tensor) -> torch.Tensor:
-    """Interpret packed A exactly in the documented block/core-row order."""
+    """Interpret packed A and return physical y' (sorted if windows are enabled)."""
 
     if vector.numel() != packed.K:
         raise ValueError(f"vector has {vector.numel()} elements; expected K={packed.K}")
@@ -342,6 +427,29 @@ def cpu_spmv_slice_ell(packed: PackedSliceELL, vector: torch.Tensor) -> torch.Te
     if cursor != words.size:
         raise RuntimeError("packed_a length disagrees with blocks_per_slice")
     return out[: packed.M].to(torch.bfloat16)
+
+
+# Restore canonical row order from physical SELL output using each window's local map.
+def cpu_unpermute_windows(packed: PackedSliceELL, physical_y: torch.Tensor) -> torch.Tensor:
+    """Scatter window-local physical y' into canonical y without touching x."""
+
+    if physical_y.numel() != packed.M:
+        raise ValueError(f"physical output has {physical_y.numel()} elements; expected M={packed.M}")
+    if packed.window_count == 0:
+        return physical_y.clone()
+    if packed.window_slice_offsets is None or packed.row_indices is None:
+        raise ValueError("sorted packed matrix is missing its window row map")
+    canonical = torch.empty_like(physical_y)
+    for first, last in zip(packed.window_slice_offsets[:-1], packed.window_slice_offsets[1:]):
+        base = int(first) * packed.config.block_height
+        end = min(int(last) * packed.config.block_height, packed.M)
+        if end <= base:
+            continue
+        local = packed.row_indices[base:end].astype(np.int64)
+        if np.any(local >= end - base) or np.unique(local).size != end - base:
+            raise ValueError("row_indices is not a permutation within its window")
+        canonical[base + torch.from_numpy(local)] = physical_y[base:end]
+    return canonical
 
 
 # Create the fixed-length host config object [x bits | blocks_per_slice | alignment zeros].
@@ -395,7 +503,7 @@ def _load_csr_npz(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
 
 # Run the optional standalone packer; imported use is the normal test path.
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pack a CSR matrix into row-order-preserving Slice-ELL")
+    parser = argparse.ArgumentParser(description="Pack CSR into Slice-ELL or windowed SELL-C-sigma")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--csr-npz", type=Path, help="npz with indptr, indices, values, and shape")
     source.add_argument("--safetensors", type=Path, help="one pruned-model safetensors shard")
@@ -406,8 +514,17 @@ def main() -> None:
     parser.add_argument("--block-height", type=int, default=32)
     parser.add_argument("--block-width", type=int, default=256)
     parser.add_argument("--shim-columns", type=int, default=8)
+    parser.add_argument("--window-count", type=int, default=0, help="0: no row sort; 1: offline global sort; 8/16: windowed sort")
+    parser.add_argument("--window-slice-boundaries", type=int, nargs="+", help="optional boundaries in B_h-row slice units")
     args = parser.parse_args()
-    config = SliceELLConfig(args.core_rows, args.block_height, args.block_width, LANES, args.shim_columns)
+    config = SliceELLConfig(
+        core_rows=args.core_rows,
+        block_height=args.block_height,
+        block_width=args.block_width,
+        shim_columns=args.shim_columns,
+        window_count=args.window_count,
+        window_slice_boundaries=tuple(args.window_slice_boundaries) if args.window_slice_boundaries else None,
+    )
     if args.csr_npz:
         indptr, indices, values, K = _load_csr_npz(args.csr_npz)
         packed = csr_to_slice_ell(indptr, indices, values, K=K, config=config)

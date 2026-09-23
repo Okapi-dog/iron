@@ -20,7 +20,11 @@ from iron.operators.spmv.evaluation import (
     window_slice_bounds,
 )
 from iron.operators.spmv.reference import reference_ell
-from iron.operators.spmv.slice_ell import cpu_spmv_csr, cpu_spmv_slice_ell
+from iron.operators.spmv.slice_ell import (
+    cpu_spmv_csr,
+    cpu_spmv_slice_ell,
+    cpu_unpermute_windows,
+)
 
 
 @pytest.mark.parametrize("pattern", ["uniform", "skewed"])
@@ -58,10 +62,11 @@ def test_window_models_preserve_rows_and_report_column_work():
     )
     assert sell8["packed_a_bytes"] <= baseline["packed_a_bytes"]
     assert sell8["window_slice_bounds"][0] == 0
-    assert sell8["window_slice_bounds"][-1] == 17
+    assert sell8["logical_window_slice_bounds"][-1] == 17
+    assert sell8["window_slice_bounds"][-1] == 24
     assert sum(sell8["window_rows"]) == 136
     assert sum(sell8["column_blocks"]) == sell8["total_blocks"]
-    assert sell16["row_indices_bytes"] == 136 * 2
+    assert sell16["row_indices_bytes"] == sell16["padded_rows"] * 2
     assert sell16["max_column_blocks"] <= sell16["total_blocks"]
     assert (
         sell8["total_storage_bytes"]
@@ -142,7 +147,7 @@ def test_one_csr_and_vector_feed_existing_format_adapters():
     )
 
 
-def test_design_selector_rejects_wrong_format_and_sell_packer_is_not_faked():
+def test_design_selector_rejects_wrong_format_and_packs_sell():
     matrix = generate_synthetic_csr(
         MatrixInput(source="synthetic", M=64, K=64, density=0.1)
     )
@@ -150,8 +155,13 @@ def test_design_selector_rejects_wrong_format_and_sell_packer_is_not_faked():
         estimate_storage(
             matrix.profile, FormatSpec(name="ell"), DesignSpec("sell_dedicated_reorder")
         )
-    with pytest.raises(NotImplementedError, match="Step 1"):
-        pack_existing_format(matrix, FormatSpec(name="sell_c_sigma", window_count=8))
+    packed = pack_existing_format(
+        matrix, FormatSpec(name="sell_c_sigma", window_count=8)
+    )
+    assert packed.window_count == 8
+    actual = cpu_unpermute_windows(packed, cpu_spmv_slice_ell(packed, matrix.vector))
+    expected = cpu_spmv_csr(matrix.indptr, matrix.indices, matrix.values, matrix.vector)
+    assert torch.allclose(actual.float(), expected.float(), atol=0.05, rtol=0.05)
 
 
 def test_safetensors_uses_canonical_csr_and_content_hash(tmp_path):

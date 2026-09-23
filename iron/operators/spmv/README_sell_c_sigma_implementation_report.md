@@ -1,4 +1,11 @@
-# SELL-C-σ Step 0 報告（NPUなし）
+# SELL-C-σ 実装報告書
+
+各Stepの完了時点で確認できた事実を記録する。折り畳まれた過去Stepの記述は、当時の状態を示す。
+
+<details>
+<summary>Step 0 — 共通評価導線とstorage予測（展開して表示）</summary>
+
+## Step 0 報告（NPUなし）
 
 ## 状態と再現条件
 
@@ -67,3 +74,57 @@ export PYTHONPATH="$PWD:/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-package
 ## Step 1へ渡す判断
 
 初期対象は計画通り **8 window / 等行数 / 連続割当** が妥当。4行列でreorder L1下限は2–5.38 KiB、global sortよりAはやや大きいが、column内完結ができる。16 windowはL1の余裕を増やす選択肢として残す。等NNZ境界やbalanced割当はmodel上の候補であり、最初のNPU実装に直結させない。最も重要な未確定点は、実SELL packerのcorrectnessとreorderを含むend-to-end NPU latencyである。
+
+</details>
+
+## Step 1 — windowed packerとCPU reference
+
+### 実装した契約
+
+- `SliceELLConfig.window_count=0` は従来の行順保存形式。`1` はglobal-sortのoffline参照、`8/16` はwindow-local stable sort。`window_slice_boundaries` は `B_h` 行単位の境界を指定する。省略時は各windowにsliceを均等配分する。
+- sortは各window内の行NNZ降順、同じNNZの行は元の順序を維持する。`PackedSliceELL.row_indices[physical_row]` はそのwindow内の元の行番号。末尾のpadding行はdtypeの最大値をsentinelとする。window内最大行数が65535以下ならuint16、それを超えればuint32。
+- `packed_a` のblock/core-row/local-row順と `blocks_per_slice` の固定長control contractは従来と同じ。`cpu_spmv_slice_ell()` はphysical `y'` を返し、`cpu_unpermute_windows()` が元の行順の `y` に戻す。ソートなしでは両者は同じ値。
+- `dense_to_slice_ell()` も同じpackerを通る。共通入口 `pack_for_design()` はformatとdesignの整合性を検査する。方式Aと方式Bは**同一CSR・同一FormatSpecなら同一packed A/row mapを共有**できるが、実行方式の配線・L1配置は別問題。
+- 16 window等の連続割当はpackできる。不均等境界で列別slice数が異なる場合、固定長NPU ABIの `slices_per_column` は明示的に失敗する。Step 0容量モデルの `balanced` window→column割当は、まだpayload/runtime契約がないためpackerでは黙って実装せず拒否する。
+- optional cacheはsorted時に `row_indices.bin` も保存し、manifestへwindow境界・dtype・hashを記録する。通常のテストと実行はメモリ上のpacked objectを使う。
+
+### CPU検証結果
+
+ws007の既存Python環境で、従来の `test_slice_ell.py`、Step 0の `test_evaluation.py`、新規 `test_sell_c_sigma.py` を実行し、**130 passed**（pytestのiteration設定で26件×5回）。無ソートのA payloadは旧 `spmv/slice-ell` branchから取得したSHA-256ともbitwise一致した。stable tie-break、zero row/zero-block slice、末尾partial slice、global sort、任意境界、複数column、8/16 window、uint32 row mapへの拡張、実packed byte数とStep 0モデルの一致を確認した。
+
+Llama-2-7B pruning modelの代表4 weightについて、8/16 window・等行数境界・8 column・`B_h=8, B_w=256`で実際にpackし、`cpu_unpermute_windows(cpu_spmv_slice_ell(...))` を同じCSRのCPU参照と比較した。**全8条件で一致**。下表は実packed A容量で、Step 0予測値とも一致する。これはNPU実測ではない。
+
+| weight | M×K | 8 window A MiB | 16 window A MiB | row map KiB | 最大絶対誤差 |
+|---|---:|---:|---:|---:|---:|
+| layer 3 `o_proj` | 4096×4096 | 8.234 | 8.336 | 8.0 | 0 |
+| layer 0 `gate_proj` | 11008×4096 | 22.727 | 23.078 | 21.5 | 0 |
+| layer 0 `down_proj` | 4096×11008 | 19.531 | 19.867 | 8.0 | 0 |
+| layer 25 `down_proj` | 4096×11008 | 19.867 | 19.891 | 8.0 | 0.000061 |
+
+末尾にcolumn配置用のpadding sliceがある小行列では、Step 0の旧モデルはrow map容量を過小評価していた。Step 1の実packerとの照合で発見し、モデルを **padding行のsentinelを含む実配置** に修正した。上記4行列には追加padding sliceがなく、Step 0の掲載値は変わらない。
+
+### 再現コマンド
+
+リポジトリrootで実行する。`verify_step1.py` は行列を一度だけ読み込み、同一CSR/xとCPU参照を各formatへ再利用する。JSONLにはmatrix/format hash、実packed A bytes、CPU正誤などが残る。
+
+```bash
+source /opt/xilinx/xrt/setup.sh
+export NPU_RUNTIME=xrt
+export PYTHONPATH="$PWD:/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-packages:$PYTHONPATH"
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m pytest \
+  iron/operators/spmv/test_slice_ell.py \
+  iron/operators/spmv/test_evaluation.py \
+  iron/operators/spmv/test_sell_c_sigma.py -q
+
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m iron.operators.spmv.verify_step1 \
+  --model-dir /home/hitoshi/elsa/pruned_model/Llama-2-7b-hf_pruned0.9_admm_lr5e-05_20260301_2016 \
+  --format sell_c_sigma --windows 8 16 --boundary equal_rows
+
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m iron.operators.spmv.verify_step1 \
+  --synthetic 128 128 0.1 skewed 42 --columns 2 --block-height 8 \
+  --block-width 32 --windows 2 4 --boundary equal_rows equal_nnz
+```
+
+### 次Stepへ残ること
+
+このStepではNPU compile/実行、固定長ObjectFIFOのlowering、row mapのFIFO転送、MemTile joinからreorder coreへの配線、L1実配置、16 windowのTAP/BD切替を検証していない。`window_count=1` は容量・CPU参照専用であり、8 columnから単一coreへのfan-inを実装した意味ではない。次は計画のStep 2に従い、既存の一時micro-testを恒久化して固定長データ経路を検証する。
