@@ -11,7 +11,7 @@ import aie.dialects.index as index
 from aie.dialects import arith, memref
 from aie.helpers.dialects.scf import _for as range_
 from aie.helpers.taplib import TensorAccessPattern
-from aie.iron import Buffer, Kernel, ObjectFifo, Program, Runtime, TaskGroup, Worker
+from aie.iron import Buffer, Kernel, Lock, ObjectFifo, Program, Runtime, TaskGroup, Worker
 from aie.iron.device import Tile
 from iron.operators.spmv.sell_c_sigma_layout import SELLCoreLayout
 
@@ -289,6 +289,163 @@ def sell_spmv_dedicated(dev, M: int, K: int, blocks_per_column, windows: int,
         control_taps.append(TensorAccessPattern(
             [columns * windows_per_column * control_words],
             col * windows_per_column * control_words,
+            [windows_per_column, 1, 1, control_words], [control_words, 0, 0, 1],
+        ))
+        output_taps.append(TensorAccessPattern(
+            [M], col * windows_per_column * rows_per_window,
+            [windows_per_column, 1, 1, rows_per_window], [rows_per_window, 0, 0, 1],
+        ))
+        a_offset += a_words
+
+    def sequence(A, control, Y, a_prods, control_prods, output_conss):
+        tasks = TaskGroup()
+        for col in range(columns):
+            a_prods[col].fill(A, a_taps[col], group=tasks)
+            control_prods[col].fill(control, control_taps[col], group=tasks)
+        for col in range(columns):
+            output_conss[col].drain(Y, output_taps[col], group=tasks, wait=True)
+        tasks.finish()
+
+    runtime = Runtime(
+        sequence,
+        [l3_a, l3_control, l3_output,
+         [fifo.prod() for fifo in a_fifos],
+         [fifo.prod() for fifo in control_fifos],
+         [fifo.cons() for fifo in output_fifos]],
+    )
+    return Program(dev, runtime, workers=workers).resolve_program()
+
+
+def sell_spmv_time_multiplex(dev, M: int, K: int, blocks_per_column, windows: int):
+    """Step 4: four compute cores, with row 4 also reordering each window.
+
+    Every core owns two physical rows per slice.  Rows 2/3 fill the first
+    half-window in row 3's L1; rows 4/5 fill the second half in row 4's L1.
+    These tiles are neighbors, so row 4 can read both after the three other
+    workers signal completion.  No third input stream or intermediate DRAM
+    buffer is needed.  The control FIFO gates reuse of the shared buffers.
+    """
+
+    blocks_per_column = tuple(int(n) for n in blocks_per_column)
+    columns = len(blocks_per_column)
+    rows_per_window, slices_per_column, windows_per_column = _layout(M, columns, windows)
+    if K <= 0 or K > 65535 or any(n <= 0 for n in blocks_per_column):
+        raise ValueError("K must fit uint16 and every column must have A blocks")
+    slices_per_window = rows_per_window // 8
+    config_words = 2 + K + slices_per_window
+    config_words += config_words % 2
+    control_words = config_words + rows_per_window
+    words_per_block = 8 * 256 * 2
+    total_blocks = sum(blocks_per_column)
+
+    bf16 = np.dtype[bfloat16]
+    i16 = np.dtype[np.int16]
+    a_pair = np.ndarray[(2 * 512,), bf16]
+    l2_a = np.ndarray[(words_per_block,), bf16]
+    l1_control = np.ndarray[(control_words,), i16]
+    l1_half = np.ndarray[(rows_per_window // 2,), bf16]
+    l1_output = np.ndarray[(rows_per_window,), bf16]
+    l1_state = np.ndarray[(4,), np.dtype[np.float32]]
+    l3_a = np.ndarray[(total_blocks * words_per_block,), bf16]
+    l3_control = np.ndarray[(windows * control_words,), i16]
+    l3_output = np.ndarray[(M,), bf16]
+
+    init = Kernel("sell_state_init", "sell_c_sigma.o", [l1_state])
+    accumulate = Kernel("sell_accumulate2", "sell_c_sigma.o", [a_pair, l1_control, l1_state])
+    finalize = Kernel("sell_finalize2_shared", "sell_c_sigma.o",
+                      [l1_state, l1_half, np.int32, np.int32])
+    reorder = Kernel("sell_reorder_shared", "sell_c_sigma.o",
+                     [l1_half, l1_half, l1_control, l1_output, np.int32, np.int32])
+
+    a_fifos, control_fifos, output_fifos, workers = [], [], [], []
+    for col in range(columns):
+        mem = Tile(col, 1)
+        core_tiles = [Tile(col, 2 + row) for row in range(4)]
+        a_col = ObjectFifo(l2_a, name=f"mux_a_col_{col}", depth=2)
+        control_col = ObjectFifo(l1_control, name=f"mux_control_col_{col}", depth=1)
+        output = ObjectFifo(l1_output, name=f"mux_output_col_{col}", depth=1)
+        a_fifos.append(a_col)
+        control_fifos.append(control_col)
+        output_fifos.append(output)
+
+        a_cores = a_col.cons().split(
+            [0, 1024, 2048, 3072], obj_types=[a_pair] * 4, tile=mem,
+            depths=[2] * 4, names=[f"mux_a_{col}_{row}" for row in range(4)],
+        )
+        first_half = Buffer(l1_half, name=f"mux_first_half_{col}", tile=core_tiles[1])
+        second_half = Buffer(l1_half, name=f"mux_second_half_{col}", tile=core_tiles[2])
+        done0 = Lock(core_tiles[1], name=f"mux_done0_{col}")
+        done1 = Lock(core_tiles[1], name=f"mux_done1_{col}")
+        done3 = Lock(core_tiles[2], name=f"mux_done3_{col}")
+
+        def compute_body(a_fifo, control_fifo, half, state, pair, done,
+                         init_kernel, accumulate_kernel, finalize_kernel):
+            for _ in range_(windows_per_column):
+                control = control_fifo.acquire(1)
+                for local_slice in range_(slices_per_window):
+                    init_kernel(state)
+                    p_word = memref.load(control, [arith.addi(index.constant(K + 2), local_slice)])
+                    p = index.casts(T.index(), p_word)
+                    for _ in range_(p):
+                        a = a_fifo.acquire(1)
+                        accumulate_kernel(a, control, state)
+                        a_fifo.release(1)
+                    finalize_kernel(state, half, local_slice, pair)
+                done.release()
+                control_fifo.release(1)
+
+        for row, half, pair, done in (
+            (0, first_half, 0, done0),
+            (1, first_half, 1, done1),
+            (3, second_half, 1, done3),
+        ):
+            state = Buffer(l1_state, name=f"mux_state_{col}_{row}")
+            workers.append(Worker(
+                compute_body,
+                [a_cores[row].cons(), control_col.cons(), half, state, pair, done,
+                 init, accumulate, finalize],
+                tile=core_tiles[row], stack_size=2048, dynamic_objfifo_lowering=True,
+            ))
+
+        def reorder_after_compute(a_fifo, control_fifo, half0, half1, state,
+                                  done_a, done_b, done_c, output_fifo,
+                                  init_kernel, accumulate_kernel, finalize_kernel, reorder_kernel):
+            for _ in range_(windows_per_column):
+                control = control_fifo.acquire(1)
+                for local_slice in range_(slices_per_window):
+                    init_kernel(state)
+                    p_word = memref.load(control, [arith.addi(index.constant(K + 2), local_slice)])
+                    p = index.casts(T.index(), p_word)
+                    for _ in range_(p):
+                        a = a_fifo.acquire(1)
+                        accumulate_kernel(a, control, state)
+                        a_fifo.release(1)
+                    finalize_kernel(state, half1, local_slice, 0)
+                done_a.acquire()
+                done_b.acquire()
+                done_c.acquire()
+                canonical = output_fifo.acquire(1)
+                reorder_kernel(half0, half1, control, canonical, config_words, rows_per_window)
+                output_fifo.release(1)
+                control_fifo.release(1)
+
+        state = Buffer(l1_state, name=f"mux_state_{col}_2")
+        workers.append(Worker(
+            reorder_after_compute,
+            [a_cores[2].cons(), control_col.cons(), first_half, second_half, state,
+             done0, done1, done3, output.prod(), init, accumulate, finalize, reorder],
+            tile=core_tiles[2], stack_size=2048, dynamic_objfifo_lowering=True,
+        ))
+
+    a_taps, control_taps, output_taps = [], [], []
+    a_offset = 0
+    for col, count in enumerate(blocks_per_column):
+        a_words = count * words_per_block
+        a_taps.append(TensorAccessPattern(
+            [total_blocks * words_per_block], a_offset, [1, 1, 1, a_words], [0, 0, 0, 1],
+        ))
+        control_taps.append(TensorAccessPattern(
+            [windows * control_words], col * windows_per_column * control_words,
             [windows_per_column, 1, 1, control_words], [control_words, 0, 0, 1],
         ))
         output_taps.append(TensorAccessPattern(

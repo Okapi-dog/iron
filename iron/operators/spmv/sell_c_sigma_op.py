@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""NPU operators for the SELL-C-sigma route test and dedicated-core SpMV."""
+"""NPU operators for the SELL-C-sigma route, dedicated, and time-multiplex designs."""
 
 from dataclasses import dataclass, field
 
@@ -122,5 +122,61 @@ class SpMVSELLDedicated(MLIROperator):
             AIERuntimeArgSpec(
                 "in", (self.windows * self.control_words,), dtype=np.dtype(np.int16),
             ),
+            AIERuntimeArgSpec("out", (self.M,)),
+        ]
+
+
+@dataclass
+class SpMVSELLTimeMultiplex(MLIROperator):
+    """Step-4 SELL-C-sigma: 4 compute cores/column, one reorders afterward."""
+
+    M: int
+    K: int
+    blocks_per_column: tuple[int, ...]
+    windows: int
+    context: object | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        self.blocks_per_column = tuple(int(n) for n in self.blocks_per_column)
+        columns = len(self.blocks_per_column)
+        if columns not in (1, 8) or self.windows not in (columns, 2 * columns):
+            raise ValueError("time-multiplex design supports 1 or 8 columns and 1 or 2 windows/column")
+        if (self.M <= 0 or self.M % (8 * self.windows)
+                or self.M // self.windows % 2 or not 0 < self.K <= 65535):
+            raise ValueError("M needs even-length complete windows, and K must fit uint16")
+        if self.M // self.windows > 65535 or any(n <= 0 for n in self.blocks_per_column):
+            raise ValueError("window map must fit uint16 and each column needs A blocks")
+        super().__init__(context=self.context)
+
+    @property
+    def config_words(self) -> int:
+        words = 2 + self.K + self.M // (8 * self.windows)
+        return words + words % 2
+
+    @property
+    def control_words(self) -> int:
+        return self.config_words + self.M // self.windows
+
+    def get_mlir_artifact(self):
+        return PythonGeneratedMLIRArtifact(
+            f"{self.name}.mlir",
+            DesignGenerator(
+                self.operator_dir / "sell_c_sigma_design.py",
+                "sell_spmv_time_multiplex",
+                (aie_utils.get_current_device(), self.M, self.K,
+                 self.blocks_per_column, self.windows),
+            ),
+        )
+
+    def get_kernel_artifacts(self):
+        return [KernelObjectArtifact(
+            "sell_c_sigma.o",
+            dependencies=[SourceArtifact(self.operator_dir / "sell_c_sigma.cc")],
+        )]
+
+    def get_arg_spec(self):
+        return [
+            AIERuntimeArgSpec("in", (sum(self.blocks_per_column) * 8 * 256 * 2,)),
+            AIERuntimeArgSpec("in", (self.windows * self.control_words,), dtype=np.dtype(np.int16)),
             AIERuntimeArgSpec("out", (self.M,)),
         ]

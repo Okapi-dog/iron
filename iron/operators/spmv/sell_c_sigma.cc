@@ -134,3 +134,34 @@ extern "C" void sell_reorder_scatter(
       canonical_window[destination] = joined[source];
   }
 }
+
+// Step 4: four compute cores write disjoint two-row regions of two shared
+// neighboring L1 buffers.  Core row 4 reads both buffers after lock handoff.
+extern "C" void sell_finalize2_shared(
+    const float *state, bfloat16 *half_window,
+    int32_t slice_in_window, int32_t pair_in_half) {
+  ::aie::set_rounding(aie::rounding_mode::conv_even);
+  const unsigned base = static_cast<unsigned>(slice_in_window) * 4
+                      + static_cast<unsigned>(pair_in_half) * 2;
+  half_window[base] = static_cast<bfloat16>(state[0]);
+  half_window[base + 1] = static_cast<bfloat16>(state[1]);
+}
+
+// The control object is [config | window-local row map].  Each half stores
+// four physical rows per slice, so no full-window MemTile FIFO is required.
+extern "C" void sell_reorder_shared(
+    const bfloat16 *first_half, const bfloat16 *second_half,
+    const int16_t *control, bfloat16 *canonical_window,
+    int32_t config_words, int32_t rows_per_window) {
+  for (int32_t row = 0; row < rows_per_window; ++row)
+    canonical_window[row] = static_cast<bfloat16>(0);
+  for (int32_t row = 0; row < rows_per_window; ++row) {
+    const unsigned local = static_cast<unsigned>(row) % 8;
+    const unsigned slice = static_cast<unsigned>(row) / 8;
+    const unsigned source = slice * 4 + local % 4;
+    const bfloat16 value = local < 4 ? first_half[source] : second_half[source];
+    const unsigned destination = static_cast<uint16_t>(control[config_words + row]);
+    if (destination != 0xffff)
+      canonical_window[destination] = value;
+  }
+}

@@ -16,7 +16,7 @@ import torch
 
 from iron.common.test_utils import run_test
 from iron.operators.spmv.op import SpMVSliceELLDynamicScalarMultiCol
-from iron.operators.spmv.sell_c_sigma_op import SpMVSELLDedicated
+from iron.operators.spmv.sell_c_sigma_op import SpMVSELLDedicated, SpMVSELLTimeMultiplex
 from iron.operators.spmv.sell_c_sigma_runtime import make_dedicated_inputs
 from iron.operators.spmv.sell_c_sigma_layout import SELLCoreLayout
 from iron.operators.spmv.slice_ell import (
@@ -48,6 +48,9 @@ def main():
     parser.add_argument("--seed", type=int, default=73)
     parser.add_argument("--rows-per-core", nargs=3, type=int, default=(2, 3, 3),
                         metavar=("CORE0", "CORE1", "CORE2"))
+    parser.add_argument("--include-time-multiplex", action="store_true",
+                        help="also measure the 4-compute-core Step-4 design on exactly the same packed A")
+    parser.add_argument("--windows", type=int, default=8, choices=(8, 16))
     args = parser.parse_args()
     M, K = args.M, args.K
     layout = SELLCoreLayout(tuple(args.rows_per_core))
@@ -66,7 +69,7 @@ def main():
         config=SliceELLConfig(
             core_rows=4 if layout.block_height == 8 else 3,
             block_height=layout.block_height, block_width=256,
-            shim_columns=8, window_count=8,
+            shim_columns=8, window_count=args.windows,
         ),
     )
     x = torch.rand(K, generator=torch.Generator().manual_seed(args.seed + 1)).to(torch.bfloat16)
@@ -78,15 +81,15 @@ def main():
 
     # The row map is the only difference between the two 24-core runs.
     identity_control = control.clone()
-    window_rows = packed.padded_rows // 8
-    control_words = identity_control.numel() // 8
+    window_rows = packed.padded_rows // args.windows
+    control_words = identity_control.numel() // args.windows
     config_words = control_words - window_rows
-    for window in range(8):
+    for window in range(args.windows):
         first = window * control_words + config_words
         identity_control[first : first + window_rows] = torch.arange(window_rows, dtype=torch.int16)
 
     operator = SpMVSELLDedicated(
-        packed.padded_rows, K, block_counts, 8, rows_per_core=layout.rows_per_core,
+        packed.padded_rows, K, block_counts, args.windows, rows_per_core=layout.rows_per_core,
     )
     experiments = [
         ("24-core physical", operator,
@@ -95,12 +98,21 @@ def main():
          {"packed": A, "control": control}, canonical),
     ]
     if layout.block_height == 8:
+        if args.include_time_multiplex:
+            mux = SpMVSELLTimeMultiplex(packed.padded_rows, K, block_counts, args.windows)
+            experiments.extend([
+                ("32-core time-multiplex physical", mux,
+                 {"packed": A, "control": identity_control}, physical),
+                ("32-core time-multiplex canonical", mux,
+                 {"packed": A, "control": control}, canonical),
+            ])
         experiments.append((
             "32-core physical", SpMVSliceELLDynamicScalarMultiCol(
                 M=packed.padded_rows, K=K, blocks_per_column=block_counts, block_height=8,
             ), {"packed": A, "config": make_32core_config(packed, x)}, physical,
         ))
     print(f"M={M} K={K} padded_M={packed.padded_rows} seed={args.seed} "
+          f"windows={args.windows} "
           f"rows_per_core={layout.rows_per_core} packed_A_bytes={packed.packed_a.nbytes}")
     for label, operator, inputs, expected in experiments:
         errors, latency_us, bandwidth = run_test(

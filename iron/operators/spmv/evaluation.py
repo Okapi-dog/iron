@@ -122,8 +122,8 @@ class DesignSpec:
             "dense_k_tiled": "existing",
             "ell": "existing",
             "slice_ell": "existing",
-            "sell_dedicated_reorder": "planned",
-            "sell_time_multiplex_reorder": "unproven",
+            "sell_dedicated_reorder": "existing",
+            "sell_time_multiplex_reorder": "existing",
         }[self.name]
 
     def validate_format(self, fmt: FormatSpec) -> None:
@@ -356,7 +356,7 @@ def pack_existing_format(matrix: CSRMatrix, fmt: FormatSpec):
 def pack_for_design(matrix: CSRMatrix, fmt: FormatSpec, design: DesignSpec):
     """Check format/design compatibility before choosing the shared packer.
 
-    The two planned SELL execution designs consume identical packed A only
+    The two SELL execution designs consume identical packed A only
     when they use the same FormatSpec and input CSR; runtime wiring is separate.
     """
 
