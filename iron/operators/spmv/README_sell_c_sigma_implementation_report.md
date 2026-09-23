@@ -127,4 +127,55 @@ export PYTHONPATH="$PWD:/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-package
 
 ### 次Stepへ残ること
 
-このStepではNPU compile/実行、固定長ObjectFIFOのlowering、row mapのFIFO転送、MemTile joinからreorder coreへの配線、L1実配置、16 windowのTAP/BD切替を検証していない。`window_count=1` は容量・CPU参照専用であり、8 columnから単一coreへのfan-inを実装した意味ではない。次は計画のStep 2に従い、既存の一時micro-testを恒久化して固定長データ経路を検証する。
+このStepではNPU compile/実行、固定長ObjectFIFOのlowering、row mapのFIFO転送、MemTile joinからreorder coreへの配線、L1実配置、16 windowのTAP/BD切替を検証していない。`window_count=1` は容量・CPU参照専用であり、8 columnから単一coreへのfan-inを実装した意味ではない。これらは下記Step 2/3で検証した。Step 2のmicro-testは既存の一時ファイルの移植ではなく、このbranchで新規に書いた。
+
+<details>
+<summary>Step 2 — 新規マイクロテストと固定長データ経路（展開して表示）</summary>
+
+## 実装と結果
+
+`sell_c_sigma_design.py` の `sell_reorder_route()`、`sell_c_sigma.cc` のcopy/scatter kernel、`sell_c_sigma_op.py` のoperator、および `test_sell_route.py` を新規作成した。3 producerは**単純コピー**でありSpMVではない。各列で2/4/4 BF16の3 producer出力をMemTileで10要素にjoinし、専用coreがdummy 2要素を除く8行をwindow内row mapでscatterする。完成した1 windowのみをcanonical出力としてdrainする。producer→reorderの途中にDRAM書戻しはない。
+
+ws007のNPU2、`mlir-aie v1.4.3`環境で `M=1024, 8 column/8 window`、`M=28672, 8 column/8 window`、`M=28672, 8 column/16 window` の新規random permutationを実行し、BF16出力がCPU期待値と**bitwise一致**した（3 passed）。16 windowでは1列のreorder workerとL1 FIFOを2 windowで再利用した。
+
+生成された `input_with_addresses.mlir` の `M=28672/16 window` 代表列: reorder L1はcanonical `1792×BF16=3584 B`、map `1792×int16=3584 B`、join FIFO `2×10×BF16=40 B`を割当。reorder tileには4 buffer・6 lock、MemTileには4 buffer・12 lock。Shimは入力MM2S 2本（physical/map）と出力S2MM 1本。reorder tileのDMAは入力S2MM 2 channel・出力MM2S 1 channel、計4 BD。これらは代表列の生成MLIR上の数であり、全デバイス合計ではない。MemTileのbank配置はphysicalの2 objectがbank 0/1、joinedの2 objectがbank 2/3。worker stack/code等は上記payload容量に含めていない。
+
+</details>
+
+## Step 3 — 実SpMVと専用reorder core
+
+### データ契約と実装
+
+`sell_spmv_dedicated()` は各列のrow 2/3/4に3計算worker、row 5にreorder workerを置く。`B_h=8, B_w=256`、AはStep 1の `PackedSliceELL` をそのまま使い、行順を変えずに2/3/3行へsplitする。3行側の出力はDMAの4-byte整列のため4要素とし、4番目をdummy zeroとする。MemTileで2/4/4を10要素にjoinし、reorder側で実8行だけをscatterする。scalar-stateは各compute coreの4×FP32 L1 bufferに置き、各sliceで初期化、`p` 個のA blockを既存Slice-ELLと同様の32-lane BF16 MACで処理してからBF16出力にする。
+
+Shim入力は **Aとcontrolの2本**。`make_dedicated_inputs()` はwindowごとに `[2 header words | BF16 x | p per slice | alignment pad | uint16 row map]` を作る。MemTileでconfigを3 compute coreへ、row mapをreorder coreへsplitする。出力は1本。3入力Shimが必要なA/config/map別送を避けた。control・A・出力のObjectFIFO object長は各window/columnで固定し、`p` のみruntime値である。canonical windowはreorder L1上でまずzero初期化し、末尾padding行のsentinelをscatterせずzero出力する。完成windowを連続drainし、full outputをMemTileに保持しない。
+
+初期ABIの制限は `K<=65535`、8列なら `window_count=8/16`、等slice数の連続window、row mapはuint16、1列なら `window_count=1/2`、各列のA block数>0。任意の不均等window境界、uint32 row map、完全zero列の特別経路は未実装で、明示的に拒否する。`M`が8×window数で割り切れない場合はpackerの `padded_rows` をNPU出力長にして末尾zeroを含める。
+
+### 実機検証
+
+ws007 NPU2で新規 `test_sell_spmv.py` の **6条件すべて成功**。1列はidentity/reverseと全zero slice、8列はrandom・8/16 window、さらに `M=1021` の末尾不完全sliceを確認した。行NNZにはzero rowと `p=0/1/2` のsliceが混在する。全条件でCPU CSR参照に対し指定BF16許容誤差内でcanonical outputが一致し、deadlockなし。`M=1024,K=512`、8列の短時間測定では8 window約117 µs、16 window約111 µsだった。これは小さいテスト行列の参考値で、実モデルの速度を予測するものではない。
+
+`M=4096,K=4096`、seed 73、packed A 4,489,216 Bでも、**同一packed Aとx**を使い、24計算core＋8 reorder coreのidentity map（physical出力）・real map（canonical出力）・従来32計算core（physical出力）を比較した。2回の実機測定は順に `209.34/183.88/187.74 µs` と `201.86/181.70/190.59 µs`。24-core canonicalはこの例で32-core physicalと概ね同程度だが、前者にreorder、後者にreorderがなく、短時間計測の揺れもあるため、一般的な優劣は主張しない。同じAを使うidentity-map実験は**sort無効の別packingとの比較ではない**。行ソートによるA転送削減を含む公平な性能比較は後続Stepの評価とする。
+
+`input_with_addresses.mlir` の `M=1024,K=512,8 window` 代表列では、MemTileにA ping-pong `2×4096×BF16=16 KiB`、control `658×int16=1316 B`、joined `2×10×BF16=40 B`、計5 buffer・16 lock。ShimはA/controlのMM2S 2本、outputのS2MM 1本。compute coreのA ping-pongは2行coreで4 KiB、3行coreで6 KiB。各compute coreにconfig `530×int16=1060 B`、出力FIFO 2 object、FP32 state 16 Bを置く。reorder coreはmap 256 B、canonical window 256 B、joined ping-pong 40 B、計4 buffer・6 lock・4 BD、入力S2MM 2 channel/出力MM2S 1 channel。これらは**payload/MLIR配置**であり、stack・ELF・空きbankまで含めた一般的なL1容量保証ではない。
+
+### 再現方法
+
+ws007のIRON checkout rootで、XRTを有効化して実行する。`--iterations 1` はpytestのNPU test反復を1回にする。
+
+```bash
+source /opt/xilinx/xrt/setup.sh
+export NPU_RUNTIME=xrt
+export PYTHONPATH="$PWD:$PYTHONPATH"
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m pytest \
+  iron/operators/spmv/test_sell_route.py \
+  iron/operators/spmv/test_sell_spmv.py \
+  iron/operators/spmv/test_sell_c_sigma.py \
+  iron/operators/spmv/test_slice_ell.py -q --iterations 1
+
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
+  -m iron.operators.spmv.measure_sell_dedicated --M 4096 --K 4096 --seed 73
+```
+
+上記回帰テストは **28 passed**。NPU compileの生成物は `build/<operator-name>.mlir.d/input_with_addresses.mlir` で確認できる。
