@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import numpy as np
+import pytest
 import torch
 
 from iron.common.test_utils import run_test
@@ -202,6 +203,49 @@ def test_slice_ell_dynamic_scalar_state_two_rows_per_core(aie_context):
 def test_slice_ell_dynamic_scalar_state_six_rows_per_core(aie_context):
     """Phase-4 generic geometry: B_h=24, so each core owns six rows."""
     _assert_dynamic_scalar_state_rows_per_core(aie_context, block_height=24)
+
+
+@pytest.mark.parametrize("columns", [1, 8])
+def test_slice_ell_dynamic_three_cores_two_rows_with_tail(aie_context, columns):
+    """B_h=6 uses three compute cores and pads an incomplete final column."""
+    M, K, block_height = 143, 512, 6
+    counts = (np.arange(M, dtype=np.int64) % 5) * 90
+    indptr = np.concatenate(([0], counts.cumsum()))
+    rng = np.random.default_rng(241)
+    indices = rng.integers(0, K, size=int(indptr[-1]), dtype=np.uint16)
+    values = rng.uniform(-0.1, 0.1, size=int(indptr[-1])).astype(np.float32)
+    packed = csr_to_slice_ell(
+        indptr, indices, values, K=K,
+        config=SliceELLConfig(core_rows=3, block_height=block_height,
+                              block_width=256, shim_columns=columns),
+    )
+    assert packed.padded_rows % (block_height * columns) == 0
+    vector = torch.rand(K, generator=torch.Generator().manual_seed(242)).to(torch.bfloat16)
+    expected = cpu_spmv_slice_ell(packed, vector)
+    slices_per_column = packed.slices_per_column
+    config_words = 2 + K + slices_per_column
+    config_words += config_words % 2
+    config = torch.zeros(columns * config_words, dtype=torch.int16)
+    x_words = vector.view(torch.uint16).view(torch.int16)
+    blocks_by_col = packed.blocks_per_slice.reshape(columns, slices_per_column)
+    for col in range(columns):
+        base = col * config_words
+        config[base] = 2
+        config[base + 2:base + 2 + K] = x_words
+        config[base + 2 + K:base + 2 + K + slices_per_column] = torch.from_numpy(
+            blocks_by_col[col].astype(np.int16, copy=False)
+        )
+    operator = SpMVSliceELLDynamicScalarMultiCol(
+        M=packed.padded_rows, K=K,
+        blocks_per_column=tuple(int(counts.sum()) for counts in blocks_by_col),
+        block_height=block_height, core_rows=3, context=aie_context,
+    )
+    errors, _, _ = run_test(
+        operator, {"packed": packed.packed_a_as_bf16, "config": config},
+        {"output": expected}, rel_tol=0.08, abs_tol=0.025,
+        warmup_iters=1,
+    )
+    assert not errors, errors
 
 
 def test_slice_ell_horizontal_static_p1_1024x2048(aie_context):

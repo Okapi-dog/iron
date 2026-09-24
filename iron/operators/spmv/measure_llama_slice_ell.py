@@ -79,11 +79,16 @@ def load_csr(tensor_path: Path, name: str) -> tuple[np.ndarray, np.ndarray, np.n
 
 
 def make_runtime_config(
-    vector: torch.Tensor, packed, cols: int
+    vector: torch.Tensor, packed, cols: int,
+    block_height: int = BLOCK_HEIGHT, core_rows: int = CORE_ROWS,
 ) -> tuple[torch.Tensor, tuple[int, ...]]:
     """Build per-column ``[C_h, reserved, x, p..., pad]`` config objects."""
-    M, K = packed.M, packed.K
-    slices_per_column = M // (BLOCK_HEIGHT * cols)
+    K = packed.K
+    if packed.config.block_height != block_height or packed.config.shim_columns != cols:
+        raise ValueError("packed geometry does not match runtime config")
+    if block_height % core_rows:
+        raise ValueError("block_height must divide evenly across core rows")
+    slices_per_column = packed.slices_per_column
     p_by_column = packed.blocks_per_slice.reshape(cols, slices_per_column)
     blocks_per_column = tuple(int(p.sum()) for p in p_by_column)
     if any(count == 0 for count in blocks_per_column):
@@ -95,7 +100,7 @@ def make_runtime_config(
     x_words = vector.view(torch.uint16).view(torch.int16)
     for column in range(cols):
         base = column * config_words
-        config[base] = BLOCK_HEIGHT // CORE_ROWS
+        config[base] = block_height // core_rows
         config[base + 2 : base + 2 + K] = x_words
         config[base + 2 + K : base + 2 + K + slices_per_column] = torch.from_numpy(
             p_by_column[column].astype(np.int16, copy=False)

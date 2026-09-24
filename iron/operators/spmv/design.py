@@ -566,19 +566,20 @@ def spmv_slice_ell_dynamic_scalar(dev, M, K, total_blocks, trace_size=0, func_pr
 
 
 def spmv_slice_ell_dynamic_scalar_multicol(
-    dev, M, K, blocks_per_column, block_height=32, trace_size=0, func_prefix=""
+    dev, M, K, blocks_per_column, block_height=32, trace_size=0, func_prefix="",
+    core_rows=4,
 ):
-    """Phase-4 scalar-state Slice-ELL with four core rows in every active column.
+    """Phase-4 scalar-state Slice-ELL with configurable core rows per column.
 
     ``blocks_per_column[c]`` is the exact number of fixed-size A objects sent
     to column ``c``.  A counts may differ, while the number of y slice objects
     is identical across columns; this preserves the static join/drain contract.
     """
-    rows, block_width = 4, 256
+    rows, block_width = core_rows, 256
     # Each core drains C_h BF16 output elements.  ObjectFIFO DMA requires a
-    # 4-byte transfer, hence C_h must be even (B_h a multiple of eight).
-    if block_height <= 0 or block_height % (rows * 2):
-        raise ValueError("block_height must be a positive multiple of eight")
+    # 4-byte transfer, hence C_h must be even.
+    if not 1 <= rows <= 4 or block_height <= 0 or block_height % (rows * 2):
+        raise ValueError("block_height must give an even row count per core")
     core_height = block_height // rows
     blocks_per_column = tuple(int(n) for n in blocks_per_column)
     cols = len(blocks_per_column)

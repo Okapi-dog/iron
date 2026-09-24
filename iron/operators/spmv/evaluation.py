@@ -346,7 +346,9 @@ def pack_existing_format(matrix: CSRMatrix, fmt: FormatSpec):
             matrix.values,
             K=K,
             config=SliceELLConfig(
-                core_rows=3 if fmt.name == "sell_c_sigma" and fmt.block_height % 3 == 0 else 4,
+                core_rows=(3 if (fmt.name == "sell_c_sigma" and fmt.block_height % 3 == 0)
+                           or (fmt.name == "slice_ell" and fmt.block_height == 6)
+                           else 4),
                 block_height=fmt.block_height,
                 block_width=fmt.block_width,
                 shim_columns=fmt.columns,

@@ -57,8 +57,10 @@ def make_case(matrix, design_name: str, windows: int, block_height: int = BLOCK_
     M, K = matrix.profile.M, matrix.profile.K
     x = matrix.vector
     design = DesignSpec(design_name)
-    if block_height != BLOCK_HEIGHT and design_name != "sell_dedicated_reorder":
-        raise ValueError("variable B_h is implemented only for dedicated SELL")
+    if block_height != BLOCK_HEIGHT and design_name == "slice_ell" and block_height != 6:
+        raise ValueError("row-order Slice-ELL additionally supports B_h=6")
+    if block_height != BLOCK_HEIGHT and design_name == "sell_time_multiplex_reorder":
+        raise ValueError("variable B_h is not implemented for multiplexed SELL")
     if design_name == "sell_dedicated_reorder" and block_height not in (6, 8, 9, 18, 36, 72):
         raise ValueError("dedicated SELL supports B_h=6,8,9,18,36,72")
 
@@ -73,11 +75,15 @@ def make_case(matrix, design_name: str, windows: int, block_height: int = BLOCK_
         extra = {"k_tile": k_tile, "row_indices_bytes": 0,
                  "control_bytes": 0, "packed_a_bytes": packed_a.numel() * 2}
     elif design_name == "slice_ell":
-        fmt = FormatSpec("slice_ell", BLOCK_HEIGHT, BLOCK_WIDTH, COLUMNS)
+        fmt = FormatSpec("slice_ell", block_height, BLOCK_WIDTH, COLUMNS)
         packed = pack_for_design(matrix, fmt, design)
-        config, counts = make_runtime_config(x, packed, COLUMNS)
+        core_rows = 3 if block_height == 6 else 4
+        config, counts = make_runtime_config(
+            x, packed, COLUMNS, block_height=block_height, core_rows=core_rows,
+        )
         operator = SpMVSliceELLDynamicScalarMultiCol(
-            M, K, counts, block_height=BLOCK_HEIGHT,
+            packed.padded_rows, K, counts, block_height=block_height,
+            core_rows=core_rows,
         )
         inputs = {"packed": packed.packed_a_as_bf16, "config": config}
         payload = packed.packed_a
@@ -145,7 +151,7 @@ def measure_case(matrix, design_name: str, windows: int, expected: torch.Tensor,
         memtile_fifo_bytes_per_column = 2 * BLOCK_HEIGHT * BLOCK_WIDTH * 4
     elif design_name == "slice_ell":
         memtile_fifo_bytes_per_column = (
-            2 * BLOCK_HEIGHT * BLOCK_WIDTH * 4 + 2 * BLOCK_HEIGHT * 2
+            2 * block_height * BLOCK_WIDTH * 4 + 2 * block_height * 2
         )
     else:
         memtile_fifo_bytes_per_column = None
@@ -196,7 +202,7 @@ def main() -> None:
     parser.add_argument("--design", action="append", choices=DESIGNS)
     parser.add_argument("--windows", nargs="+", type=int, choices=(8, 16), default=(8,))
     parser.add_argument("--block-height", type=int, choices=(6, 8, 9, 18, 36, 72), default=8,
-                        help="variable height is currently supported only by SELL dedicated")
+                        help="B_h=6 is supported by row-order Slice-ELL and dedicated SELL")
     parser.add_argument("--output-jsonl", type=Path)
     args = parser.parse_args()
 

@@ -332,6 +332,7 @@ class SpMVSliceELLDynamicScalarMultiCol(MLIROperator):
     blocks_per_column: tuple[int, ...]
     block_height: int = 32
     trace_size: int = 0
+    core_rows: int = 4
     context: object | None = field(default=None, repr=False)
 
     _name_aliases: ClassVar[dict[str, str]] = {
@@ -339,14 +340,17 @@ class SpMVSliceELLDynamicScalarMultiCol(MLIROperator):
         "blocks_per_column": "bpc",
         "block_height": "bh",
         "trace_size": "trace",
+        "core_rows": "cr",
     }
 
     def __post_init__(self) -> None:
         self.blocks_per_column = tuple(int(n) for n in self.blocks_per_column)
         cols = len(self.blocks_per_column)
-        if (not 1 <= cols <= 8 or self.block_height <= 0 or self.block_height % 8
+        if (not 1 <= cols <= 8 or not 1 <= self.core_rows <= 4
+                or self.block_height <= 0
+                or self.block_height % (2 * self.core_rows)
                 or self.M <= 0 or self.M % (self.block_height * cols) or self.K <= 0):
-            raise ValueError("block_height must be a positive multiple of eight and divide M")
+            raise ValueError("block_height must give an even row count per core and divide M")
         if any(n <= 0 for n in self.blocks_per_column):
             raise ValueError("the first multicolumn implementation requires non-empty A columns")
         super().__init__(context=self.context)
@@ -358,7 +362,7 @@ class SpMVSliceELLDynamicScalarMultiCol(MLIROperator):
                 self.operator_dir / "design.py",
                 "spmv_slice_ell_dynamic_scalar_multicol",
                 (aie_utils.get_current_device(), self.M, self.K, self.blocks_per_column,
-                 self.block_height, self.trace_size),
+                 self.block_height, self.trace_size, "", self.core_rows),
             ),
         )
 
