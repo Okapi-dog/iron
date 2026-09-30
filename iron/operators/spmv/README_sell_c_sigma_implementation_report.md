@@ -16,7 +16,7 @@
 
 ## 用意した共通入口
 
-- `evaluation.py`: `MatrixInput` が合成行列の生成条件、またはsafetensors tensorの読み込み元を指定する。`load_or_generate_csr()` はformatと独立な `CSRMatrix`（`indptr`、`indices`、`values`、共通BF16入力ベクトル `x`）を返す。合成行列だけを直接生成するときは `generate_synthetic_csr()` を使う。
+- `matrix_preparation.py`（当時の`evaluation.py`）: `MatrixInput` が合成行列の生成条件、またはsafetensors tensorの読み込み元を指定する。`load_or_generate_csr()` はformatと独立な `CSRMatrix`（`indptr`、`indices`、`values`、共通BF16入力ベクトル `x`）を返す。合成行列だけを直接生成するときは `generate_synthetic_csr()` を使う。
 - 使用経路は、実体が必要なら `MatrixInput → load_or_generate_csr() → CSRMatrix → pack_existing_format()`。容量評価だけなら `MatrixInput → synthetic_profile() / safetensors_profile() → estimate_storage()` とし、大行列の全CSRを作らない。`canonical` は行・出力の元順序を表す語として使い、CSR型の名前には使わない。
 - `FormatSpec` と `pack_existing_format()` で、同一CSRから既存dense/ELL/Slice-ELLへ変換できる。SELL-C-σを選んだ場合はStep 1まで明示的に未実装エラーとし、Slice-ELLを偽って返さない。
 - `DesignSpec` はformatと実行方式の組を検査し、`existing` / `planned` / `unproven` を記録する。NPU dispatch自体は後続Stepで追加する。
@@ -59,7 +59,7 @@
 source /opt/xilinx/xrt/setup.sh
 export NPU_RUNTIME=xrt
 export PYTHONPATH="$PWD:/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-packages:$PYTHONPATH"
-/home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m pytest iron/operators/spmv/test_evaluation.py -q
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m pytest iron/operators/spmv/test_matrix_preparation.py -q
 
 /home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m iron.operators.spmv.evaluate_step0 \
   --model-dir /home/hitoshi/elsa/pruned_model/Llama-2-7b-hf_pruned0.9_admm_lr5e-05_20260301_2016 \
@@ -113,7 +113,7 @@ export NPU_RUNTIME=xrt
 export PYTHONPATH="$PWD:/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-packages:$PYTHONPATH"
 /home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m pytest \
   iron/operators/spmv/test_slice_ell.py \
-  iron/operators/spmv/test_evaluation.py \
+  iron/operators/spmv/test_matrix_preparation.py \
   iron/operators/spmv/test_sell_c_sigma.py -q
 
 /home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m iron.operators.spmv.verify_step1 \
@@ -161,6 +161,8 @@ ws007 NPU2で新規 `test_sell_spmv.py` の **6条件すべて成功**。1列は
 `input_with_addresses.mlir` の `M=1024,K=512,8 window` 代表列では、MemTileにA ping-pong `2×4096×BF16=16 KiB`、control `658×int16=1316 B`、joined `2×10×BF16=40 B`、計5 buffer・16 lock。ShimはA/controlのMM2S 2本、outputのS2MM 1本。compute coreのA ping-pongは2行coreで4 KiB、3行coreで6 KiB。各compute coreにconfig `530×int16=1060 B`、出力FIFO 2 object、FP32 state 16 Bを置く。reorder coreはmap 256 B、canonical window 256 B、joined ping-pong 40 B、計4 buffer・6 lock・4 BD、入力S2MM 2 channel/出力MM2S 1 channel。これらは**payload/MLIR配置**であり、stack・ELF・空きbankまで含めた一般的なL1容量保証ではない。
 
 ### 再現方法
+
+以下のJSONLは改名前のStep 5コードで取得した履歴である。現行CLIは`measure_paper real`に統合され、既定の重み一覧・高さ・方式・`x_seed`は論文測定用へ変わった。**過去の表を厳密に再現する場合は当時のコードと明記された設定を使用すること**。以下は現行CLIで同じ種類のケースを選ぶ入口であり、無指定で旧表と同じ条件になるという意味ではない。
 
 ws007のIRON checkout rootで、XRTを有効化して実行する。`--iterations 1` はpytestのNPU test反復を1回にする。
 
@@ -243,7 +245,7 @@ export PYTHONPATH="$PWD:$PYTHONPATH"
   iron/operators/spmv/test_sell_spmv.py \
   iron/operators/spmv/test_sell_time_multiplex.py \
   iron/operators/spmv/test_sell_c_sigma.py \
-  iron/operators/spmv/test_evaluation.py -q --iterations 1
+  iron/operators/spmv/test_matrix_preparation.py -q --iterations 1
 
 /home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
   -m iron.operators.spmv.measure_sell_dedicated \
@@ -357,7 +359,7 @@ export NPU_RUNTIME=xrt
 export PYTHONPATH="$PWD:/home/hitoshi/elsa/elsa_venv/lib/python3.12/site-packages:$PYTHONPATH"
 MODEL=/home/hitoshi/elsa/pruned_model/Llama-2-7b-hf_pruned0.9_admm_lr5e-05_20260301_2016
 /home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
-  -m iron.operators.spmv.measure_sell_step5 "$MODEL" \
+  -m iron.operators.spmv.measure_paper real "$MODEL" \
   --output-jsonl /tmp/sell-step5-results.jsonl
 # --weight、--design、--windows 8/16 で部分再実行できる。
 # JSONLは追記式なので再測定時は新しい出力パスを指定する。
@@ -398,8 +400,13 @@ MODEL=/home/hitoshi/elsa/pruned_model/Llama-2-7b-hf_pruned0.9_admm_lr5e-05_20260
 # ws007、前節と同じXRT/PYTHONPATH/model環境にて
 for H in 6 8 9 18 36 72; do
   /home/hitoshi/ironenv-mlir-v1.4.3/bin/python \
-    -m iron.operators.spmv.measure_sell_step5 "$MODEL" \
+    -m iron.operators.spmv.measure_paper real "$MODEL" \
     --design sell_dedicated_reorder --block-height "$H" \
+    --weight model.layers.3.self_attn.o_proj.weight \
+    --weight model.layers.0.mlp.gate_proj.weight \
+    --weight model.layers.0.mlp.down_proj.weight \
+    --weight model.layers.25.mlp.down_proj.weight \
+    --inter-case-seconds 0 \
     --output-jsonl "/tmp/sell-height${H}.jsonl"
 done
 # B_h=72, K=11008は上記のL1制約で失敗するため、実際にはK=4096の2 weightだけ選択して実行。

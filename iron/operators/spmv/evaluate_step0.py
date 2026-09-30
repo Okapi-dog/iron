@@ -20,7 +20,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from iron.operators.spmv.evaluation import (
+from iron.operators.spmv.matrix_preparation import (
     DesignSpec,
     FormatSpec,
     MatrixInput,
@@ -85,6 +85,11 @@ def parse_args() -> argparse.Namespace:
         action="append",
         metavar=("M", "K", "DENSITY", "PATTERN", "SEED"),
     )
+    parser.add_argument(
+        "--synthetic-cv", nargs=5, action="append",
+        metavar=("M", "K", "MEAN_NNZ", "ROW_CV", "SEED"),
+        help="synthetic row lengths with exact total NNZ and a target relative CV",
+    )
     parser.add_argument("--model-dir", type=Path)
     parser.add_argument(
         "--weight", action="append", help="safetensors tensor name (repeatable)"
@@ -132,8 +137,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output", choices=("jsonl", "markdown"), default="markdown")
     args = parser.parse_args()
-    if not args.synthetic and args.model_dir is None:
-        parser.error("provide --synthetic or --model-dir")
+    if not args.synthetic and not args.synthetic_cv and args.model_dir is None:
+        parser.error("provide --synthetic, --synthetic-cv, or --model-dir")
     if args.weight and args.model_dir is None:
         parser.error("--weight requires --model-dir")
     if not args.format:
@@ -154,6 +159,15 @@ def main() -> None:
                 density=float(density),
                 row_pattern=pattern,
                 seed=int(seed),
+            )
+        )
+    for values in args.synthetic_cv or []:
+        M, K, mean_nnz, row_cv, seed = values
+        specs.append(
+            MatrixInput(
+                source="synthetic", M=int(M), K=int(K),
+                mean_nnz=float(mean_nnz), row_cv=float(row_cv),
+                row_pattern="cv", seed=int(seed),
             )
         )
     if args.model_dir is not None:

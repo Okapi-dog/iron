@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 
-from iron.operators.spmv.evaluation import (
+from iron.operators.spmv.matrix_preparation import (
     DesignSpec,
     FormatSpec,
     MatrixInput,

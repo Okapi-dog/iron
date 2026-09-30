@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""NPU-independent matrix, format, and design selection for SpMV experiments.
+"""Prepare SpMV CSR/x, packed formats, and storage estimates on the CPU.
 
-The storage model and Step-1 SELL packer are CPU-only; neither implies that a
-SELL-C-sigma NPU kernel or reorder data path has been implemented.
+This module does not compile or execute an NPU operator; the measurement layer
+consumes its matrices and packed inputs separately.
 """
 
 from __future__ import annotations
@@ -31,7 +31,9 @@ class MatrixInput:
     M: int | None = None
     K: int | None = None
     density: float | None = None
-    row_pattern: Literal["uniform", "skewed"] = "uniform"
+    mean_nnz: float | None = None
+    row_cv: float | None = None
+    row_pattern: Literal["uniform", "skewed", "cv", "cv_calibrated"] = "uniform"
     seed: int = 0
     x_seed: int = 3000
     model_dir: str | None = None
@@ -41,8 +43,17 @@ class MatrixInput:
         if self.source == "synthetic":
             if self.M is None or self.K is None or self.M <= 0 or self.K <= 0:
                 raise ValueError("synthetic MatrixInput requires positive M and K")
-            if self.density is None or not 0 <= self.density <= 1:
-                raise ValueError("synthetic MatrixInput requires density in [0, 1]")
+            if (self.density is None) == (self.mean_nnz is None):
+                raise ValueError("synthetic MatrixInput needs exactly one of density or mean_nnz")
+            if self.density is not None and not 0 <= self.density <= 1:
+                raise ValueError("density must be in [0, 1]")
+            if self.mean_nnz is not None and not 0 <= self.mean_nnz <= self.K:
+                raise ValueError("mean_nnz must be in [0, K]")
+            if self.row_pattern in ("cv", "cv_calibrated"):
+                if self.row_cv is None or not np.isfinite(self.row_cv) or self.row_cv < 0:
+                    raise ValueError("cv row pattern requires nonnegative finite row_cv")
+            elif self.row_cv is not None:
+                raise ValueError("row_cv is only used with a CV row pattern")
         elif self.source == "safetensors":
             if not self.model_dir or not self.tensor_name:
                 raise ValueError(
@@ -137,7 +148,7 @@ class DesignSpec:
 
 @dataclass(frozen=True)
 class MatrixProfile:
-    """Rows and content fingerprint needed by the Step-0 storage model."""
+    """Matrix shape, row lengths, and a source fingerprint."""
 
     spec: MatrixInput
     M: int
@@ -220,6 +231,13 @@ def generate_synthetic_csr(spec: MatrixInput) -> CSRMatrix:
             values[begin:end] = rng.uniform(-1.0, 1.0, size=int(count)).astype(
                 np.float32
             )
+    if spec.row_pattern in ("cv", "cv_calibrated"):
+        # Use positive random weights for the format comparison: the older
+        # ELL kernel rounds partial sums to BF16, so cancellation in signed
+        # data otherwise dominates its correctness check at large row widths.
+        values = 0.5 + 0.5 * np.abs(values)
+        # The NPU consumes BF16 values; retain CSRMatrix's float32 storage API.
+        values = torch.from_numpy(values).to(torch.bfloat16).float().numpy()
     vector = torch.rand(
         profile.K, generator=torch.Generator().manual_seed(spec.x_seed)
     ).to(torch.bfloat16)
@@ -371,35 +389,79 @@ def pack_for_design(matrix: CSRMatrix, fmt: FormatSpec, design: DesignSpec):
 
 
 def synthetic_row_counts(spec: MatrixInput) -> np.ndarray:
-    """Make exact-total row NNZ with uniform or heavy-tailed row lengths."""
+    """Make exact-total row NNZ with uniform, heavy-tailed, or fixed-CV lengths."""
 
     if spec.source != "synthetic":
         raise ValueError("synthetic_row_counts requires a synthetic MatrixInput")
-    assert spec.M is not None and spec.K is not None and spec.density is not None
-    target = round(spec.M * spec.K * spec.density)
+    assert spec.M is not None and spec.K is not None
+    mean_nnz = spec.mean_nnz if spec.mean_nnz is not None else spec.K * spec.density
+    target = round(spec.M * mean_nnz)
     if target == 0 or target == spec.M * spec.K:
         return np.full(spec.M, target // spec.M, dtype=np.int64)
     rng = np.random.default_rng(spec.seed)
     weights = np.ones(spec.M, dtype=np.float64)
     if spec.row_pattern == "skewed":
         weights = rng.lognormal(mean=0.0, sigma=1.25, size=spec.M)
+    elif spec.row_pattern == "cv":
+        assert spec.row_cv is not None
+        # Lognormal multipliers have the requested population CV before
+        # finite-M sampling, K clipping, and integer rounding.  Reusing the
+        # same seed across means keeps the relative row profile comparable.
+        sigma = np.sqrt(np.log1p(spec.row_cv**2))
+        weights = rng.lognormal(mean=-sigma**2 / 2, sigma=sigma, size=spec.M)
+    elif spec.row_pattern == "cv_calibrated":
+        assert spec.row_cv is not None
+        # Keep the same row ranks while searching for the latent spread that
+        # produces the requested CV *after* clipping and integer rounding.
+        normals = rng.standard_normal(spec.M)
+        low_sigma, high_sigma = 0.0, 1.0
+        while _row_cv(_counts_from_weights(
+            np.exp(np.clip(high_sigma * normals, -700, 700)), target, spec.K,
+        )) < spec.row_cv and high_sigma < 32:
+            high_sigma *= 2
+        for _ in range(28):
+            middle = (low_sigma + high_sigma) / 2
+            counts = _counts_from_weights(
+                np.exp(np.clip(middle * normals, -700, 700)), target, spec.K,
+            )
+            if _row_cv(counts) < spec.row_cv:
+                low_sigma = middle
+            else:
+                high_sigma = middle
+        counts = _counts_from_weights(
+            np.exp(np.clip(high_sigma * normals, -700, 700)), target, spec.K,
+        )
+        if abs(_row_cv(counts) - spec.row_cv) > max(0.002, 0.05 * spec.row_cv):
+            raise ValueError("requested row CV is not attainable after clipping")
+        return counts
     elif spec.row_pattern != "uniform":
         raise ValueError(f"unsupported row pattern: {spec.row_pattern}")
 
-    low, high = 0.0, float(spec.K / weights.min())
+    return _counts_from_weights(weights, target, spec.K)
+
+
+def _row_cv(counts: np.ndarray) -> float:
+    """Population coefficient of variation for nonempty row counts."""
+    return float(counts.std() / counts.mean())
+
+
+def _counts_from_weights(weights: np.ndarray, target: int, width: int) -> np.ndarray:
+    """Fit positive row weights to an exact NNZ total and per-row width."""
+
+    low, high = 0.0, float(width / weights.min())
     for _ in range(70):
         middle = (low + high) / 2
-        if np.minimum(weights * middle, spec.K).sum() < target:
+        if np.minimum(weights * middle, width).sum() < target:
             low = middle
         else:
             high = middle
-    quotas = np.minimum(weights * high, spec.K)
+    quotas = np.minimum(weights * high, width)
     counts = np.floor(quotas).astype(np.int64)
     remainder = target - int(counts.sum())
     if remainder:
         fractions = quotas - counts
         order = np.argsort(-fractions, kind="stable")
-        eligible = order[counts[order] < spec.K]
+        eligible = order[counts[order] < width]
         if remainder < 0 or remainder > eligible.size:
             raise RuntimeError("cannot round synthetic row counts to exact NNZ")
         counts[eligible[:remainder]] += 1

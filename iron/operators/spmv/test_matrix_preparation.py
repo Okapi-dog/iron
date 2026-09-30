@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import torch
 
-from iron.operators.spmv.evaluation import (
+from iron.operators.spmv.matrix_preparation import (
     DesignSpec,
     FormatSpec,
     MatrixProfile,
@@ -40,6 +40,52 @@ def test_synthetic_source_is_reproducible_and_has_exact_density(pattern):
     assert first.row_nnz.min() >= 0 and first.row_nnz.max() <= 512
     if pattern == "skewed":
         assert first.row_nnz.max() > 2 * first.row_nnz.mean()
+
+
+def test_fixed_cv_synthetic_csr_has_exact_mean_and_bf16_values():
+    spec = MatrixInput(
+        source="synthetic", M=1024, K=512, mean_nnz=128,
+        row_cv=0.25, row_pattern="cv", seed=42,
+    )
+    first = generate_synthetic_csr(spec)
+    second = generate_synthetic_csr(spec)
+    counts = first.profile.row_nnz
+    assert first.profile.nnz == 1024 * 128
+    assert abs(counts.std() / counts.mean() - 0.25) < 0.02
+    assert counts.min() >= 0 and counts.max() <= 512
+    assert np.array_equal(first.indptr, second.indptr)
+    assert np.array_equal(first.indices, second.indices)
+    assert np.array_equal(first.values, second.values)
+    assert np.all(first.values == torch.from_numpy(first.values).to(torch.bfloat16).float().numpy())
+    for row in range(1024):
+        begin, end = first.indptr[row : row + 2]
+        assert np.all(np.diff(first.indices[begin:end]) > 0)
+
+
+@pytest.mark.parametrize("density,cv", [
+    (d, 0.44) for d in (0.05, 0.10, 0.20, 0.30, 0.40, 0.50)
+] + [(0.10, cv) for cv in (0.05, 0.13, 0.88, 1.06, 1.89)])
+def test_calibrated_cv_matches_achieved_profile(density, cv):
+    spec = MatrixInput(
+        source="synthetic", M=4096, K=4096, density=density,
+        row_cv=cv, row_pattern="cv_calibrated", seed=999,
+    )
+    first = synthetic_profile(spec)
+    second = synthetic_profile(spec)
+    counts = first.row_nnz
+    assert first.nnz == round(4096 * 4096 * density)
+    assert np.array_equal(counts, second.row_nnz)
+    assert counts.min() >= 0 and counts.max() <= 4096
+    assert abs(counts.std() / counts.mean() - cv) <= max(0.002, 0.05 * cv)
+
+
+def test_fixed_cv_input_validation():
+    with pytest.raises(ValueError, match="exactly one"):
+        MatrixInput(source="synthetic", M=16, K=64, density=0.5, mean_nnz=32)
+    with pytest.raises(ValueError, match="requires"):
+        MatrixInput(source="synthetic", M=16, K=64, mean_nnz=32, row_pattern="cv")
+    with pytest.raises(ValueError, match="only used"):
+        MatrixInput(source="synthetic", M=16, K=64, mean_nnz=32, row_cv=0.1)
 
 
 def test_window_models_preserve_rows_and_report_column_work():

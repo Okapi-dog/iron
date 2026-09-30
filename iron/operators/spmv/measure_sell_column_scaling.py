@@ -18,7 +18,7 @@ import torch
 from aie.iron.device import NPU2
 
 from iron.common.test_utils import run_test
-from iron.operators.spmv.evaluation import (
+from iron.operators.spmv.matrix_preparation import (
     DesignSpec, FormatSpec, MatrixInput, load_or_generate_csr, pack_for_design,
 )
 from iron.operators.spmv.measure_llama_slice_ell import REPRESENTATIVE_WEIGHTS

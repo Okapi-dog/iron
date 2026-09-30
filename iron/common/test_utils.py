@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 import torch
 import aie.utils as aie_utils
@@ -146,6 +148,7 @@ def run_test(
     warmup_iters: int = 1,
     timed_iters: int = 1,
     return_timings: bool = False,
+    idle_s: float = 0.0,
 ) -> tuple[dict[str, list[int]], float, float] | tuple[dict[str, list[int]], float, float, list[float]]:
     """
     Run operator test with specified input/output buffers.
@@ -159,6 +162,7 @@ def run_test(
         max_error_rate: Maximum fraction of elements allowed to exceed tolerances (0.0 to 1.0)
         warmup_iters: Number of warmup iterations before timing
         timed_iters: Number of timed iterations for latency/bandwidth measurement
+        idle_s: Host wait before each timed iteration; excluded from NPU timing
 
     Returns:
         (errors: dict, latency_us: float, bandwidth_gbps: float). If
@@ -167,6 +171,8 @@ def run_test(
 
     if not isinstance(operator, AIEOperatorBase):
         raise ValueError("run_test only supports AIEOperatorBase subclasses")
+    if warmup_iters < 0 or timed_iters <= 0 or idle_s < 0:
+        raise ValueError("warmup_iters, timed_iters, or idle_s is invalid")
 
     operator.compile()
     op_func = operator.get_callable()
@@ -226,6 +232,8 @@ def run_test(
     total_npu_ns = 0
     timed_us = []
     for _ in range(timed_iters):
+        if idle_s:
+            time.sleep(idle_s)
         result = op_func(*args)
         total_npu_ns += result.npu_time
         timed_us.append(result.npu_time / 1e3)

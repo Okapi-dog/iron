@@ -103,7 +103,7 @@ def prepare_sell_design(packed: PackedSliceELL, x: torch.Tensor,
     ``run_test``.  Unsupported topology names fail instead of silently
     substituting a different kernel.
     """
-    from iron.operators.spmv.evaluation import DesignSpec, FormatSpec
+    from iron.operators.spmv.matrix_preparation import DesignSpec, FormatSpec
     from iron.operators.spmv.sell_c_sigma_op import SpMVSELLDedicated, SpMVSELLTimeMultiplex
 
     design = DesignSpec(design_name)

@@ -13,7 +13,7 @@ from pathlib import Path
 import torch
 
 from iron.operators.spmv.evaluate_step0 import REPRESENTATIVE_WEIGHTS
-from iron.operators.spmv.evaluation import (
+from iron.operators.spmv.matrix_preparation import (
     CSRMatrix,
     DesignSpec,
     FormatSpec,

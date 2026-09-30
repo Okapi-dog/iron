@@ -38,7 +38,7 @@ L3とL25のSlice-ELL/SELL差は5 sample中の変動より小さく、優劣は�
 
 - branch: `spmv/sell-c-sigma-h6-comparison`。モデル: `/home/hitoshi/elsa/pruned_model/Llama-2-7b-hf_pruned0.9_admm_lr5e-05_20260301_2016`。
 - 実測: [`h6_comparison_results/sell-h6-three-running-formats-20260924.jsonl`](h6_comparison_results/sell-h6-three-running-formats-20260924.jsonl)。容量: [`h6_comparison_results/sell-h6-storage-20260924.jsonl`](h6_comparison_results/sell-h6-storage-20260924.jsonl)。個々のNNZ、hash、転送byte数、列block負荷、timed sampleはJSONLを参照。
-- 既存`measure_sell_step5.py`に高さ6の行順維持Slice-ELL経路を追加した。`SpMVSliceELLDynamicScalarMultiCol`は`core_rows=3`、packerとruntime configも同じ設定を使う。既存の高さ8・4core-row経路はデフォルトのまま。
+- 当時の`measure_sell_step5.py`（現`matrix_measure.py`）に高さ6の行順維持Slice-ELL経路を追加した。`SpMVSliceELLDynamicScalarMultiCol`は`core_rows=3`、packerとruntime configも同じ設定を使う。高さ8・4core-row経路も`--block-height 8`で指定できる。
 - ws007: `/home/hitoshi/ironenv-mlir-v1.4.3/bin/python`、XRT setup `/opt/xilinx/xrt/setup.sh`。`safetensors`は既存ELSA venvのsite-packagesを`PYTHONPATH`に足した。
 
 ```bash
@@ -49,9 +49,16 @@ MODEL=/home/hitoshi/elsa/pruned_model/Llama-2-7b-hf_pruned0.9_admm_lr5e-05_20260
   --model-dir "$MODEL" --format dense --format ell --format slice_ell \
   --format sell_c_sigma --block-height 6 --block-width 256 --columns 8 \
   --windows 8 --boundary equal_rows --assignment contiguous --output jsonl
-/home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m iron.operators.spmv.measure_sell_step5 \
+/home/hitoshi/ironenv-mlir-v1.4.3/bin/python -m iron.operators.spmv.measure_paper real \
   "$MODEL" --design dense_k_tiled --design slice_ell \
-  --design sell_dedicated_reorder --block-height 6 --windows 8
+  --design sell_dedicated_reorder --block-height 6 --windows 8 \
+  --weight model.layers.3.self_attn.o_proj.weight \
+  --weight model.layers.0.mlp.gate_proj.weight \
+  --weight model.layers.0.mlp.down_proj.weight \
+  --weight model.layers.25.mlp.down_proj.weight \
+  --inter-case-seconds 0 --output-jsonl /tmp/h6-comparison-rerun.jsonl
 ```
+
+この現行CLI例は4つのtensor名を明示し、論文用の既定JSONLへ追記しない。当時の各weight別`x_seed`まで厳密に再現する場合は、元runのseedを確認してweightごとに`--x-seed`を指定する。
 
 実機検証: 4行列×3実行方式の全12ケースがCPU出力と一致。追加の高さ6・末尾padding付きmicrotestは1列/8列×pytest 5 iterations＝10件合格。CPU側の既存容量評価50件と、従来高さ8・4 core-row実機テスト5件も合格。ELLの2種類の失敗は上記に記録し、速度表に架空値を入れていない。

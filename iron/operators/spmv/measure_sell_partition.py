@@ -19,7 +19,7 @@ import aie.utils as aie_utils
 from aie.iron.device import NPU2
 
 from iron.common.test_utils import run_test
-from iron.operators.spmv.evaluation import MatrixInput, load_or_generate_csr
+from iron.operators.spmv.matrix_preparation import MatrixInput, load_or_generate_csr
 from iron.operators.spmv.measure_llama_slice_ell import REPRESENTATIVE_WEIGHTS
 from iron.operators.spmv.sell_c_sigma_op import SpMVSELLDedicated
 from iron.operators.spmv.sell_c_sigma_runtime import (
