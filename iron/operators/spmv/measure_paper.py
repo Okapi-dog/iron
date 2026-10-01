@@ -23,12 +23,12 @@ import torch
 from aie.iron.device import NPU2
 
 from iron.operators.spmv.matrix_preparation import (
-    DesignSpec, FormatSpec, MatrixInput, estimate_storage,
+    DesignSpec, FormatSpec, MatrixInput,
     load_or_generate_csr, synthetic_profile,
 )
 from iron.operators.spmv.matrix_measure import (
     AVAILABLE_DESIGNS, BLOCK_WIDTH, COLUMNS, TIMED_ITERS, WARMUP_ITERS,
-    measure_case, sha256_array,
+    estimate_case_storage, measure_case, sha256_array,
 )
 from iron.operators.spmv.paper_config import (
     PAPER_DESIGNS, PAPER_WEIGHTS, paper_conditions, timing_protocol_id,
@@ -48,12 +48,13 @@ def storage_estimate(profile, design: str) -> dict:
     }[design]
     fmt = FormatSpec(format_name, block_height=6, block_width=256,
                      columns=8, window_count=8)
-    storage = estimate_storage(profile, fmt, DesignSpec(design))
+    storage = estimate_case_storage(profile, fmt, DesignSpec(design))
     return {
         "estimated_packed_a_bytes": storage["packed_a_bytes"],
         "estimated_a_plus_row_map_bytes": storage["total_storage_bytes"],
         "estimated_storage_over_dense": storage["storage_over_dense"],
         "estimated_ell_width": storage.get("ell_width"),
+        "estimated_ell_npu_rows": storage.get("padded_rows") if design == "ell" else None,
     }
 
 
@@ -283,17 +284,21 @@ def measure_real(argv: list[str]) -> None:
         output = PAPER_OUTPUT / f"{prefix}_{protocol_id}.jsonl"
     output.parent.mkdir(parents=True, exist_ok=True)
     completed = set()
+    run_order = 0
     if output.exists():
         for line in output.read_text().splitlines():
             if line.strip():
                 record = json.loads(line)
+                run_order = max(run_order, int(record.get("run_order") or 0))
                 if "matrix_id" in record and "requested_design" in record:
-                    completed.add((record["matrix_id"], record["requested_design"],
-                                   record.get("windows", 0),
-                                   record.get("timing_protocol_id", "legacy")))
+                    # Keep failed attempts in JSONL; a later run may append a
+                    # successful record after fixing the design or its input.
+                    if record.get("status") in ("ok", "ok_with_tolerance_exceptions"):
+                        completed.add((record["matrix_id"], record["requested_design"],
+                                       record.get("windows", 0),
+                                       record.get("timing_protocol_id", "legacy")))
 
     aie_utils.set_current_device(NPU2())
-    run_order = len(completed)
     for name in args.weight or PAPER_WEIGHTS:
         spec = MatrixInput("safetensors", model_dir=str(args.model_dir.resolve()),
                            tensor_name=name, x_seed=args.x_seed)
@@ -340,7 +345,7 @@ def measure_real(argv: list[str]) -> None:
                                "slice_ell": "slice_ell",
                                "sell_dedicated_reorder": "sell_c_sigma"}.get(design)
                 if format_name is not None:
-                    estimate = estimate_storage(
+                    estimate = estimate_case_storage(
                         matrix.profile,
                         FormatSpec(format_name, block_height=args.block_height,
                                    block_width=BLOCK_WIDTH, columns=COLUMNS,
@@ -349,6 +354,8 @@ def measure_real(argv: list[str]) -> None:
                     )
                     record["estimated_packed_a_bytes"] = estimate["packed_a_bytes"]
                     record["estimated_storage_over_dense"] = estimate["storage_over_dense"]
+                    if design == "ell":
+                        record["estimated_ell_npu_rows"] = estimate["padded_rows"]
                 try:
                     result = measure_case(
                         matrix, design, windows, expected,

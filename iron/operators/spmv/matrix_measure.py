@@ -36,11 +36,42 @@ BLOCK_WIDTH = 256
 COLUMNS = 8
 WARMUP_ITERS = 2
 TIMED_ITERS = 5
+ELL_ROWS_PER_CORE = 32
+ELL_CORES_PER_COLUMN = 4
 
 
 def sha256_array(array: np.ndarray) -> str:
     """Fingerprint one contiguous host-side payload without saving a binary."""
     return hashlib.sha256(np.ascontiguousarray(array).tobytes()).hexdigest()
+
+
+def ell_npu_rows(rows: int, columns: int = COLUMNS) -> int:
+    """Round ELL output rows to a full 32-row block on every NPU core."""
+    rows_per_dispatch = ELL_ROWS_PER_CORE * ELL_CORES_PER_COLUMN * columns
+    return ((rows + rows_per_dispatch - 1) // rows_per_dispatch) * rows_per_dispatch
+
+
+def estimate_case_storage(profile, fmt: FormatSpec, design: DesignSpec) -> dict:
+    """Include the ELL kernel's physical row padding in its NPU payload bound."""
+    storage = estimate_storage(profile, fmt, design)
+    if design.name != "ell":
+        return storage
+
+    padded_rows = ell_npu_rows(profile.M, fmt.columns)
+    slots = padded_rows * storage["ell_width"]
+    packed_bytes = 4 * slots  # BF16 value + uint16 index per slot.
+    dense_bytes = 2 * profile.M * profile.K  # Original, unpadded matrix.
+    return {
+        **storage,
+        "padded_rows": padded_rows,
+        "padded_slots": slots,
+        "packed_a_bytes": packed_bytes,
+        "total_storage_bytes": packed_bytes,
+        "a_over_dense": packed_bytes / dense_bytes,
+        "dense_over_a": dense_bytes / packed_bytes if packed_bytes else None,
+        "storage_over_dense": packed_bytes / dense_bytes,
+        "dense_over_storage": dense_bytes / packed_bytes if packed_bytes else None,
+    }
 
 
 def make_case(matrix, design_name: str, windows: int, block_height: int = BLOCK_HEIGHT):
@@ -67,22 +98,27 @@ def make_case(matrix, design_name: str, windows: int, block_height: int = BLOCK_
                  "control_bytes": 0, "packed_a_bytes": packed_a.numel() * 2,
                  "x_transfer_bytes": tiled_x.numel() * 2}
     elif design_name == "ell":
-        if M % (32 * 4 * COLUMNS):
-            raise ValueError("vertical ELL kernel requires M divisible by 32*4*columns")
         fmt = FormatSpec("ell", columns=COLUMNS)
         row_major = pack_for_design(matrix, fmt, design)
         width = row_major.numel() // (2 * M)
+        npu_rows = ell_npu_rows(M)
+        row_words = row_major.view(torch.uint16).numpy().reshape(M, 2, width)
+        if npu_rows != M:
+            # These all-zero rows live only in the ELL payload, not in CSR.
+            padded = np.zeros((npu_rows, 2, width), dtype=np.uint16)
+            padded[:M] = row_words
+            row_words = padded
         # Transpose each 32-row group to the old vertical-vector kernel's ABI.
         words = np.ascontiguousarray(
-            row_major.view(torch.uint16).numpy()
-            .reshape(M // 32, 32, 2, width).transpose(0, 3, 2, 1)
+            row_words.reshape(npu_rows // 32, 32, 2, width).transpose(0, 3, 2, 1)
         )
-        operator = SpMVSELL32Block(M, K, width)
+        operator = SpMVSELL32Block(npu_rows, K, width)
         inputs = {"packed": torch.from_numpy(words.reshape(-1)).view(torch.bfloat16),
                   "vector": x}
         payload = words
         extra = {"ell_width": width, "row_indices_bytes": 0,
-                 "control_bytes": 0, "packed_a_bytes": words.nbytes}
+                 "control_bytes": 0, "packed_a_bytes": words.nbytes,
+                 "ell_npu_rows": npu_rows, "ell_padding_rows": npu_rows - M}
     elif design_name == "slice_ell":
         fmt = FormatSpec("slice_ell", block_height, BLOCK_WIDTH, COLUMNS)
         packed = pack_for_design(matrix, fmt, design)
@@ -122,7 +158,7 @@ def make_case(matrix, design_name: str, windows: int, block_height: int = BLOCK_
                  "blocks_per_slice_sha256": sha256_array(packed.blocks_per_slice),
                  "row_indices_sha256": sha256_array(packed.row_indices)}
 
-    storage = estimate_storage(matrix.profile, fmt, design)
+    storage = estimate_case_storage(matrix.profile, fmt, design)
     if design_name != "dense_k_tiled":
         if storage["packed_a_bytes"] != extra["packed_a_bytes"]:
             raise AssertionError("estimated and packed A sizes disagree")
@@ -138,8 +174,12 @@ def measure_case(matrix, design_name: str, windows: int, expected: torch.Tensor,
                  idle_s: float = 0.0) -> dict:
     """Verify canonical output and time only a valid compatible design."""
     operator, inputs, fmt, storage, extra = make_case(matrix, design_name, windows, block_height)
+    expected_output = expected
+    if design_name == "ell" and extra["ell_padding_rows"]:
+        expected_output = torch.zeros(extra["ell_npu_rows"], dtype=expected.dtype)
+        expected_output[:matrix.profile.M] = expected
     errors, latency_us, bandwidth_gbps, timed_samples_us = run_test(
-        operator, inputs, {"output": expected}, rel_tol=0.08, abs_tol=0.025,
+        operator, inputs, {"output": expected_output}, rel_tol=0.08, abs_tol=0.025,
         warmup_iters=warmup_iters, timed_iters=timed_iters,
         return_timings=True, idle_s=idle_s,
     )
@@ -202,7 +242,7 @@ def measure_case(matrix, design_name: str, windows: int, expected: torch.Tensor,
         "storage_over_dense": storage_bytes / (2 * profile.M * profile.K),
         "dense_bf16_bytes": 2 * profile.M * profile.K,
         "x_transfer_bytes": extra.get("x_transfer_bytes", 2 * profile.K * x_copies),
-        "y_transfer_bytes": 2 * profile.M,
+        "y_transfer_bytes": 2 * extra.get("ell_npu_rows", profile.M),
         "total_blocks": storage.get("total_blocks"),
         "max_blocks_per_slice": storage.get("max_blocks_per_slice"),
         "column_blocks": storage.get("column_blocks"),

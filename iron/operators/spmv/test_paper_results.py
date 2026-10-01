@@ -40,6 +40,23 @@ def test_aggregation_pairs_matrix_means_and_preserves_failures():
     assert rows["ell"]["status"] == "failed"
 
 
+def test_aggregation_uses_a_later_successful_ell_retry():
+    common = {"matrix_id": "one", "requested_design": "ell",
+              "paper_protocol": True, "warmup_iters": 2, "timed_iters": 5,
+              "idle_seconds_before_timed": 0.0, "inter_case_seconds": 4.0}
+    records = [
+        {**common, "status": "failed", "error": "old shape limit"},
+        {**common, "status": "ok", "npu_latency_us": 800.0,
+         "timed_samples_us": [800.0] * 5, "ell_npu_rows": 11264,
+         "ell_padding_rows": 256},
+    ]
+    rows = paired_rows(records)
+    assert len(rows) == 1
+    assert rows[0]["status"] == "ok"
+    assert rows[0]["latency_us"] == 800.0
+    assert rows[0]["ell_padding_rows"] == 256
+
+
 def test_publication_figure_rejects_periodic_timing_spike():
     with pytest.raises(ValueError, match="timing sets"):
         check_timing_health([{"matrix_id": "m", "requested_design": "ell",

@@ -9,6 +9,7 @@ import torch
 from safetensors.torch import save_file
 
 from iron.operators.spmv import measure_paper
+from iron.operators.spmv.matrix_preparation import MatrixInput
 
 
 def test_synthetic_profile_mode_uses_one_paper_condition(tmp_path):
@@ -52,3 +53,36 @@ def test_real_driver_loads_one_weight_and_calls_shared_measurement(tmp_path, mon
     assert record["nnz"] == 2
     assert record["requested_design"] == "dense_k_tiled"
     assert record["paper_protocol"] is False
+
+
+def test_real_driver_retries_a_failed_case_without_overwriting_it(tmp_path, monkeypatch):
+    weight = torch.zeros((4, 8), dtype=torch.bfloat16)
+    weight[0, 1] = 1
+    save_file({"example.weight": weight}, tmp_path / "model.safetensors")
+    output = tmp_path / "result.jsonl"
+    matrix_id = MatrixInput(
+        "safetensors", model_dir=str(tmp_path.resolve()),
+        tensor_name="example.weight", x_seed=3000,
+    ).matrix_id
+    failed = {
+        "matrix_id": matrix_id, "requested_design": "ell", "windows": 0,
+        "timing_protocol_id": "w2_t5_idle0s_between0s", "run_order": 7,
+        "status": "failed", "error": "old shape limit",
+    }
+    output.write_text(json.dumps(failed) + "\n")
+    monkeypatch.setattr(measure_paper.aie_utils, "set_current_device", lambda _: None)
+    monkeypatch.setattr(measure_paper, "measure_case", lambda *args, **kwargs: {
+        "status": "ok", "npu_latency_us": 12.0,
+    })
+
+    measure_paper.main([
+        "real", str(tmp_path), "--weight", "example.weight",
+        "--design", "ell", "--inter-case-seconds", "0",
+        "--output-jsonl", str(output),
+    ])
+    records = [json.loads(line) for line in output.read_text().splitlines()]
+    assert records[0] == failed
+    assert len(records) == 2
+    assert records[1]["status"] == "ok"
+    assert records[1]["run_order"] == 8
+    assert records[1]["estimated_ell_npu_rows"] == 1024

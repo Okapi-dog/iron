@@ -144,6 +144,8 @@ def paired_rows(records: list[dict]) -> list[dict]:
                 "seed": record.get("seed", ""),
                 "tensor_name": record.get("tensor_name", ""),
                 "M": record.get("M"), "K": record.get("K"),
+                "ell_npu_rows": record.get("ell_npu_rows", ""),
+                "ell_padding_rows": record.get("ell_padding_rows", ""),
                 "target_density": record.get("target_density", ""),
                 "actual_density": record.get("actual_density", record.get("density", "")),
                 "target_row_cv": record.get("target_row_cv", ""),

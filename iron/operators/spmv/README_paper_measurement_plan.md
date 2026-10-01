@@ -129,3 +129,11 @@ python -m iron.operators.spmv.plot_paper_results
 - 上記の統一プロトコルで、実重み5行列×4方式の20組、合成11条件×10 seed×4方式の440組を実行した。実重みは18組が通常成功、1組のELLが数値許容例付き成功、1組（L11 `up_proj` のELL）は32-core経路の形状制約で実行不可。合成440組は全てCPU照合まで成功した。行NNZの目標CV相対誤差の最大は約0.002%。実重みの不可組は速度を `N/A` にする。
 - 合成440組の生sample品質検査では439組が中央値2倍以内で、`cv_1.89` / seed `1006` / `sell_dedicated_reorder` のみ `[938.093, 327.187, 290.419, 292.148, 289.508]` µs（平均427.471 µs）だった。この1組だけ同じCSR・x・format・計測プロトコルで**一度だけ**再測定し、`[322.676, 312.066, 287.734, 289.214, 291.054]` µs（平均300.549 µs）となった。元の外れ値は再現しなかった。発生源は特定しておらず、誤測定と断定しない。
 - 元の440組は `paper_evaluation/synthetic_paper_w2_t5_idle0s_between4s.jsonl` に変更せず保存し、再測定1組を `paper_evaluation/synthetic_corrections.jsonl` に分離した。図と派生CSVのみ再測定値を適用し、変更箇所は `figures/timing_correction_audit.md` に残す。再測定を都合よく選び直す追加試行はしていない。1秒間隔の旧診断データは引き続き主図へ採用しない。
+
+## 2026-10-01: `up_proj` のELL行パディング
+
+上記の「L11 `up_proj` のELLは形状制約で実行不可」は**変更前の履歴**である。CSR行列と論理出力の `M=11008` は変えず、ELLカーネルへ渡すAの末尾に256個の全ゼロ行を足して、物理行数を `32行 × 4 core/column × 8 column = 1024行` の倍数である11264へ切り上げた。NPUの11264要素の出力は、先頭11008要素を元のCPU CSR参照、末尾256要素をゼロとして照合する。パディングはELL固有のNPU adapter (`matrix_measure.py`) に置き、共通CSR生成器 (`matrix_preparation.py`) や他3方式の行列は変更しない。容量推定にもパディングを含め、分母は元のDense BF16行列 `2×11008×4096` byteのままとする。
+
+ws007の `~/IRON/ironenv` (mlir-aie `1.4.3.dev85+gdf48abc`) で、同じ重み・CSR/x hash、warmup 2＋timed 5の条件でELL単独を再計測した。結果は **1449.5966 µs**、5 sample は `[1449.521, 1444.241, 1440.991, 1461.920, 1451.310]` µs、CPU照合超過0、`status=ok`。実packed Aは **76,414,976 B**、元Dense Aの **84.7384%**（パディングを無視した旧CPU見積もりは82.8125%）。同じ `paper_evaluation2/real.jsonl` にあるDense 1890.9164 µsと比較すると **Dense/ELL = 1.3044×**。物理出力は22528 B、論理出力は22016 Bである。
+
+元データは上書きしない。ws007の `paper_evaluation2/real.jsonl` は失敗1組を含む20組のまま、`paper_evaluation2/real_with_padded_ell.jsonl` はその20組に新しいELL成功レコードを追記した21行である。`plot_paper_results.py` は同じ行列・方式の**最後のレコード**を採用し、`paper_evaluation2/figures_with_padded_ell/real_paired.csv` は20方式・行列組を表示する。従来の `figures/` も保存している。新コードは実測時点で未コミット (`git_dirty=true`) であり、この単独再測定は元の20組と測定順序が異なる。論文の最終版へ採用する前にコードを固定し、必要なら5行列×4方式を同一runで再計測する。
