@@ -13,6 +13,10 @@ PAPER_WEIGHTS = (
 PAPER_DESIGNS = ("dense_k_tiled", "ell", "slice_ell", "sell_dedicated_reorder")
 PAPER_DENSITIES = (0.05, 0.10, 0.20, 0.30, 0.40, 0.50)
 PAPER_CVS = (0.05, 0.13, 0.44, 0.88, 1.06, 1.89)
+PAPER_WARMUP_ITERS = 5
+PAPER_TIMED_ITERS = 5
+PAPER_IDLE_SECONDS = 0.0
+PAPER_INTER_CASE_SECONDS = 0.0
 
 
 def paper_conditions() -> list[tuple[str, float, float]]:
@@ -29,3 +33,9 @@ def timing_protocol_id(warmups: int, timed: int, idle: float,
     """Keep resumed runs and figure inputs from mixing timing schedules."""
     return (f"w{warmups}_t{timed}_idle{idle:g}s_"
             f"between{inter_case:g}s")
+
+
+PAPER_TIMING_PROTOCOL_ID = timing_protocol_id(
+    PAPER_WARMUP_ITERS, PAPER_TIMED_ITERS,
+    PAPER_IDLE_SECONDS, PAPER_INTER_CASE_SECONDS,
+)

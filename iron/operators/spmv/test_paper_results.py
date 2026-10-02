@@ -3,7 +3,7 @@
 
 """CPU-only checks for paper condition selection and paired aggregation."""
 
-from iron.operators.spmv.paper_config import paper_conditions
+from iron.operators.spmv.paper_config import PAPER_TIMING_PROTOCOL_ID, paper_conditions
 import pytest
 
 from iron.operators.spmv.plot_paper_results import (
@@ -21,8 +21,9 @@ def test_paper_conditions_have_one_shared_center():
 def test_aggregation_pairs_matrix_means_and_preserves_failures():
     common = {"paper_protocol": True, "matrix_id": "one", "condition": "density_10",
               "seed": 1000, "M": 4096, "K": 4096, "actual_density": 0.10,
-              "actual_row_cv": 0.44, "warmup_iters": 2, "timed_iters": 5,
-              "idle_seconds_before_timed": 0.0, "inter_case_seconds": 4.0}
+              "actual_row_cv": 0.44, "warmup_iters": 5, "timed_iters": 5,
+              "idle_seconds_before_timed": 0.0, "inter_case_seconds": 0.0,
+              "timing_protocol_id": PAPER_TIMING_PROTOCOL_ID}
     records = [
         {**common, "requested_design": "dense_k_tiled", "status": "ok",
          "npu_latency_us": 200.0, "timed_samples_us": [180, 200, 200, 200, 220],
@@ -40,10 +41,18 @@ def test_aggregation_pairs_matrix_means_and_preserves_failures():
     assert rows["ell"]["status"] == "failed"
 
 
+def test_aggregation_does_not_mix_previous_timing_protocol():
+    old = {"paper_protocol": True, "matrix_id": "old", "requested_design": "ell",
+           "timing_protocol_id": "w2_t5_idle0s_between4s", "status": "ok",
+           "timed_samples_us": [100.0] * 5, "npu_latency_us": 100.0}
+    assert paired_rows([old]) == []
+
+
 def test_aggregation_uses_a_later_successful_ell_retry():
     common = {"matrix_id": "one", "requested_design": "ell",
-              "paper_protocol": True, "warmup_iters": 2, "timed_iters": 5,
-              "idle_seconds_before_timed": 0.0, "inter_case_seconds": 4.0}
+              "paper_protocol": True, "warmup_iters": 5, "timed_iters": 5,
+              "idle_seconds_before_timed": 0.0, "inter_case_seconds": 0.0,
+              "timing_protocol_id": PAPER_TIMING_PROTOCOL_ID}
     records = [
         {**common, "status": "failed", "error": "old shape limit"},
         {**common, "status": "ok", "npu_latency_us": 800.0,

@@ -35,8 +35,8 @@
 ## 主評価の共通条件
 
 - 同一のCSR行列・BF16入力ベクトルから **Dense K-tiled GEMV、固定幅ELL、Blocked Slice-ELL（行順維持）、Blocked SELL-C-σ（行並べ替え＋専用reorder core）** の4方式を比較する。ELLは既存の32行縦方向ブロックカーネルを使うため、4本はデータ形式だけでなくkernel/コア配分も異なる「実装方式の比較」である。SELL-C-σは現行実装の `B_h=6, B_w=256, 8 windows, 8 columns, 3 compute + 1 reorder core/column`、Slice-ELLも `B_h=6, B_w=256, 8 columns` に固定する。測定点ごとの自動チューニングは行わない。
-- **各行列・各方式で最初に2回連続warmup → 5回連続計測し、次の行列・方式に移る前に4秒待機**とする。5個の生sampleを保存し、その平均を当該行列・方式の代表時間とする。速度比は同じ行列・同じseedについて `mean(Denseの5回) / mean(比較方式の5回)` と計算する。ケース間の待機は `result.npu_time` に含めない。これは短い連続burstを測り、ケース間に熱緩和の時間を入れる方式であり、kernel切り替えやLLMの実トークン間隔の再現ではない。旧 `measure.py` の「毎sample前2 warmup + 4秒待機」とも異なる**統一プロトコル**である。ダミーカーネル交互dispatchは主評価に入れない。
-- 当初の「各sample前1秒待機」は下記の健康診断で系統的な数ms級外れ値が生じたため、**全条件に一律に**上のプロトコルへ変更した。軽い/重い代表ケースで5 sampleの安定性と先後の再測定差を確認する。温度・clockが取得可能なら併記する。全体に不安定さが再発したら全方式・全行列を同じ条件で取り直す。孤立した1組だけが事前の品質判定「5 sampleの最大値 > 中央値の2倍」に抵触した場合は、**その組のみ同一条件で1回再測定**し、元の生データと再測定データの両方・差し替え理由を保存する。再測定も不安定なら都合のよい値を選ばず原因調査へ戻る。計測順序と日時を生レコードに残す。
+- **各行列・各方式で最初に5回連続warmup → 5回連続計測し、ケース間も計測間も明示的な待機を入れない**。5個の生sampleを保存し、その平均を当該行列・方式の代表時間とする。速度比は同じ行列・同じseedについて `mean(Denseの5回) / mean(比較方式の5回)` と計算する。これは短い連続burstを測る方式であり、kernel切り替えやLLMの実トークン間隔の再現ではない。旧 `measure.py` の「毎sample前2 warmup + 4秒待機」、前回本測定の「2 warmup + 5 timed + ケース間4秒」とも区別する。ダミーカーネル交互dispatchは主評価に入れない。
+- 当初の「各sample前1秒待機」は下記の健康診断で系統的な数ms級外れ値が生じた。さらにL5実重みをTurboで比較したところ、5 warmupを採用する前の診断では3 warmupより10 warmup・ケース間0秒のSELL-C-σが比較的安定・高速だった。そこで中間の5 warmup・ケース間0秒を**全条件に一律に適用して全件再測定**する。これは5回warmupで安定性が保証されたという意味ではない。5 sampleの生データを点検し、温度・clockが取得可能なら併記する。全体に不安定さが再発したら全方式・全行列を同じ条件で取り直す。孤立した1組だけが事前の品質判定「5 sampleの最大値 > 中央値の2倍」に抵触した場合は、**その組のみ同一条件で1回再測定**し、元の生データと再測定データの両方・差し替え理由を保存する。再測定も不安定なら都合のよい値を選ばず原因調査へ戻る。計測順序と日時を生レコードに残す。
 - 合成条件ごとに**独立した10 seed**を使い、本測定のseed集合は `1000..1009`、事前検証は別seed `999`、入力ベクトルは固定の `x_seed=3000` とする。各seedで生成した行列と `x` を4方式で共有する。異なる密度/CV条件でも同じseed集合を用いるが、異なる条件の行列が要素ごとに対応するとは主張しない。方式の実行順序はseedごとに循環させ、長時間測定の温度・clock変動が常に同じ方式へ偏らないようにする。箱ひげ図の1標本は「1行列の5回平均から得た速度比」であり、50回のdispatchを独立な50行列として数えない。10点の実測値を箱の上にも重ねる。
 - 全方式の出力を同一CSR/FP32蓄積→BF16のCPU参照と元の行順で照合する。現行ELL経路には一定数の数値許容例を通す処理があるため、`ok_with_tolerance_exceptions` を厳密一致と読み替えない。許容誤差・例外件数を記録し、許容範囲外のケースを主速度図へ黙って入れない。packing、compile、host BO copyと `result.npu_time` を混ぜない。
 - 既存ELLの32-core経路は全形状・全CV/密度でのL1配置、出力FIFO、コンパイル成立を保証しない。まず各条件を1 seedでCPU/NPU事前検証し、失敗した方式・条件は理由を記録して速度を `N/A` とする。**容量比からELLの実測時間を推定しない。** 成功した点だけを速度図へ載せ、方式ごとに異なる有効seed数をキャプションに明記する。失敗したseedを都合よく再抽選しない。
@@ -62,11 +62,11 @@
 
 1. `matrix_preparation.py`: `row_pattern="cv_calibrated"` を追加し、固定した行乱数に対する潜在log-normal幅を二分探索する。**クリップ・整数丸め・総NNZ合わせ後の実CV**を目標へ合わせ、到達しないときはエラーとする。旧 `row_pattern="cv"` は振る舞いを変えずに残す。
 2. `run_test()`: **NPU実行と時間収集はここだけ**に置き、既定値0秒の `idle_s` を追加した。連続warmup後と各計測の前に待つ。待機は `result.npu_time` に含めない。旧 `measure.py` の `_run()` は呼び出さない。
-3. `matrix_measure.py` の `make_case()` / `measure_case()`: **ELLを含む4方式の共通計測**を担い、2 warmup・5 timedの連続実行を `run_test()` へ渡す。ELLのみBF16部分和丸めの許容例を件数付きで別扱いする。保存容量は `packed A + 必須制御/row-map` とし、制御stream中に複製された `x` は除外する。実転送の `x` byteは別欄に残す。
+3. `matrix_measure.py` の `make_case()` / `measure_case()`: **ELLを含む4方式の共通計測**を担い、論文測定では5 warmup・5 timedの連続実行を `run_test()` へ渡す。ELLのみBF16部分和丸めの許容例を件数付きで別扱いする。保存容量は `packed A + 必須制御/row-map` とし、制御stream中に複製された `x` は除外する。実転送の `x` byteは別欄に残す。
 4. 測定ドライバ `measure_paper.py`: `synthetic` は11条件×10 seed、`synthetic --preflight` は別seed 999、`synthetic --profile-only` はNPUなしで全行プロファイルを検査する。`real` はCV分位点の実重み5行列を選ぶ。両方とも `matrix_preparation.py` で1件ずつCSR/xを用意し、`matrix_measure.py` の同じ `measure_case()` を呼ぶ。日時・順序・5 sample・hash・失敗理由・software provenanceをJSONLに残す。合成本測定は既存JSONLの完了済み組をスキップして再開できる。
 5. `plot_paper_results.py` は**同じ行列のDense**とペアにして速度比を計算し、CSV・有効seed数/失敗一覧のMarkdown・主図のSVG/PNGを生成する。1点は5 sample平均であり、失敗点から速度を推定しない。
 
-ケース間4秒待機は合成440組すべてが成立すれば439箇所で**約29分**かかる。コンパイル・生成・packing等は別途必要。この時間を実行予定に含める。実装は完了したが、本書に未測定の速度予測値は書かない。
+新プロトコルにケース間待機はない。ただし合成440組の行列生成・packing・コンパイル・NPU実行には別途時間がかかる。本書に未測定の速度予測値は書かない。
 
 ### 実行順序・再現コマンド
 
@@ -84,7 +84,7 @@ python -m iron.operators.spmv.plot_paper_results
 
 孤立外れ値の再測定は、例えば `python -m iron.operators.spmv.measure_paper synthetic --condition cv_1.89 --paper-seed 1006 --design sell_dedicated_reorder --output-jsonl /別の保存先/synthetic_corrections.jsonl` とし、元JSONLを上書きしない。描画時は `--synthetic-corrections` でその別ファイルを指定する。描画器がCSR・x・行NNZ・format・計測プロトコルの同一性、元データの外れ値判定、再測定の安定性を確認し、派生CSV/図だけへ反映する。両方の5 sampleは `figures/timing_correction_audit.md` に併記する。
 
-入力が大きく実行時間も長いため、事前確認は `measure_paper synthetic --preflight --condition density_10` のように1条件へ限定可能。本測定も `measure_paper synthetic --condition cv_1.89` のように分割実行して同じJSONLへ追記できる。既定の出力は `paper_evaluation/real_weights_w2_t5_idle0s_between4s.jsonl`、`synthetic_paper_w2_t5_idle0s_between4s.jsonl`、`figures/`。時間プロトコルを変えた場合はファイル名にも反映され、再開キーも別になる。`--profile-only` と `--preflight` は別JSONLを用いる。結果と図を**論文へ採用する前に**、各JSONLの全方式・全seedの完了件数、5 sample、環境欄、温度/clock変動、失敗点を確認する。描画スクリプトは5 sample中に中央値の2倍を超える外れ値、または途中までのJSONLを図として採用することを既定で拒否する。診断だけなら `--allow-partial` で途中図を作れるが論文には使用しない。2026-09-30の隔離検証では110生成プロファイルの目標CV/NNZが成立し、11条件×4方式の事前NPU実行・CPU照合が44/44で成功した。この事前実行は**1 timed sample・待機0秒**であり論文の速度値には使わない。
+入力が大きく実行時間も長いため、事前確認は `measure_paper synthetic --preflight --condition density_10` のように1条件へ限定可能。本測定も `measure_paper synthetic --condition cv_1.89` のように分割実行して同じJSONLへ追記できる。新プロトコルの既定出力は `paper_evaluation3/real_weights_w5_t5_idle0s_between0s.jsonl`、`synthetic_paper_w5_t5_idle0s_between0s.jsonl`、`figures/`。旧 `paper_evaluation/` と `paper_evaluation2/` は過去プロトコルの記録として保持する。時間プロトコルを変えた場合はファイル名にも反映され、再開キーも別になる。`--profile-only` と `--preflight` は別JSONLを用いる。結果と図を**論文へ採用する前に**、各JSONLの全方式・全seedの完了件数、5 sample、環境欄、温度/clock変動、失敗点を確認する。描画スクリプトは5 sample中に中央値の2倍を超える外れ値、または途中までのJSONLを図として採用することを既定で拒否する。診断だけなら `--allow-partial` で途中図を作れるが論文には使用しない。2026-09-30の隔離検証では110生成プロファイルの目標CV/NNZが成立し、11条件×4方式の事前NPU実行・CPU照合が44/44で成功した。この事前実行は**1 timed sample・待機0秒**であり論文の速度値には使わない。
 
 ## 図と実験の優先順位
 
@@ -111,7 +111,7 @@ python -m iron.operators.spmv.plot_paper_results
 
 1. **取得済み:** 224行列のCV分布図とJSONL。図のcaptionに「32層×7投影・各行列1標本・行NNZの母CV・全行列ほぼ10%非ゼロ」を明記する。
 2. 11合成条件の1 seed事前検証。生成後CVの較正、ELLを含む4方式の配置・コンパイル・CPU照合、保存容量算出を済ませる。ここで成立条件と事前固定seed集合を確定し、性能を見てからseedを選ばない。
-3. 5実行列の4方式を **2 warmup + 5 timed** で再測定し、出力一致・生sample・容量を一つの結果表へ記録。失敗方式は理由を表に残し、無理な代替kernelを黙って混ぜない。
+3. 5実行列の4方式を **5 warmup + 5 timed** で再測定し、出力一致・生sample・容量を一つの結果表へ記録。失敗方式は理由を表に残し、無理な代替kernelを黙って混ぜない。
 4. 合成11条件×10 seedを同一プロトコルで計測し、二つの箱ひげ図と容量パネルを作る。CV=1.89やELLの失敗を含め、有効seed数を表示する。全条件が成立した場合のみ440方式・行列組となる。
 5. 同じ生レコードから圧縮率対速度比の散布図を作る。コア数1/2/4/8の新operator対応、サイズ/帯域図は最後に判断し、できなければ旧稿の対応図を外す。
 6. 図から本文を書き直す。旧稿の要旨・方法・評価・結論と表の環境バージョンを一致させ、各グラフに測定集合・warmup/timed回数・速度比の分子/分母・byte計上・有効seed数を記載する。

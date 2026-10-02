@@ -18,7 +18,8 @@ from pathlib import Path
 import numpy as np
 
 from iron.operators.spmv.paper_config import (
-    PAPER_CVS, PAPER_DENSITIES, PAPER_DESIGNS, PAPER_WEIGHTS,
+    PAPER_CVS, PAPER_DENSITIES, PAPER_DESIGNS, PAPER_TIMING_PROTOCOL_ID,
+    PAPER_WEIGHTS,
 )
 
 
@@ -114,10 +115,8 @@ def paired_rows(records: list[dict]) -> list[dict]:
     """Pair all designs by the exact CSR recipe, not by nominal CV/density."""
     groups: dict[str, dict[str, dict]] = defaultdict(dict)
     for record in records:
-        if (record.get("paper_protocol") and record.get("timed_iters") == 5
-                and record.get("warmup_iters") == 2
-                and record.get("idle_seconds_before_timed") == 0.0
-                and record.get("inter_case_seconds") == 4.0
+        if (record.get("paper_protocol")
+                and record.get("timing_protocol_id") == PAPER_TIMING_PROTOCOL_ID
                 and "requested_design" in record):
             groups[record["matrix_id"]][record["requested_design"]] = record
     rows = []
@@ -402,14 +401,14 @@ def scatter_figure(rows: list[dict], output: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--synthetic", type=Path, default=Path(__file__).resolve().parent /
-                        "paper_evaluation/synthetic_paper_w2_t5_idle0s_between4s.jsonl")
+                        "paper_evaluation3/synthetic_paper_w5_t5_idle0s_between0s.jsonl")
     parser.add_argument("--real", type=Path, default=Path(__file__).resolve().parent /
-                        "paper_evaluation/real_weights_w2_t5_idle0s_between4s.jsonl")
+                        "paper_evaluation3/real_weights_w5_t5_idle0s_between0s.jsonl")
     parser.add_argument("--synthetic-corrections", type=Path,
                         default=Path(__file__).resolve().parent /
-                        "paper_evaluation/synthetic_corrections.jsonl")
+                        "paper_evaluation3/synthetic_corrections.jsonl")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent /
-                        "paper_evaluation/figures")
+                        "paper_evaluation3/figures")
     parser.add_argument("--allow-partial", action="store_true",
                         help="For diagnostic previews only; not publication figures")
     parser.add_argument("--allow-isolated-spike", action="store_true",

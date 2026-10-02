@@ -27,17 +27,19 @@ from iron.operators.spmv.matrix_preparation import (
     load_or_generate_csr, synthetic_profile,
 )
 from iron.operators.spmv.matrix_measure import (
-    AVAILABLE_DESIGNS, BLOCK_WIDTH, COLUMNS, TIMED_ITERS, WARMUP_ITERS,
+    AVAILABLE_DESIGNS, BLOCK_WIDTH, COLUMNS,
     estimate_case_storage, measure_case, sha256_array,
 )
 from iron.operators.spmv.paper_config import (
-    PAPER_DESIGNS, PAPER_WEIGHTS, paper_conditions, timing_protocol_id,
+    PAPER_DESIGNS, PAPER_IDLE_SECONDS, PAPER_INTER_CASE_SECONDS,
+    PAPER_TIMED_ITERS, PAPER_TIMING_PROTOCOL_ID, PAPER_WARMUP_ITERS,
+    PAPER_WEIGHTS, paper_conditions, timing_protocol_id,
 )
 from iron.operators.spmv.paper_provenance import paper_provenance
 from iron.operators.spmv.slice_ell import cpu_spmv_csr
 
 
-PAPER_OUTPUT = Path(__file__).resolve().parent / "paper_evaluation"
+PAPER_OUTPUT = Path(__file__).resolve().parent / "paper_evaluation3"
 
 
 def storage_estimate(profile, design: str) -> dict:
@@ -152,11 +154,13 @@ def measure_synthetic(argv: list[str]) -> None:
         parser.error("--paper-seed must be in 1000..1009")
     if args.M <= 0 or args.K <= 0:
         parser.error("M and K must be positive")
-    warmups = args.warmup_iters if args.warmup_iters is not None else (2 if paper_mode else 10)
-    timed = args.timed_iters if args.timed_iters is not None else (1 if args.preflight else 5)
-    idle = args.idle_seconds if args.idle_seconds is not None else 0.0
+    warmups = (args.warmup_iters if args.warmup_iters is not None
+               else PAPER_WARMUP_ITERS if paper_mode else 10)
+    timed = (args.timed_iters if args.timed_iters is not None
+             else 1 if args.preflight else PAPER_TIMED_ITERS)
+    idle = args.idle_seconds if args.idle_seconds is not None else PAPER_IDLE_SECONDS
     inter_case = (args.inter_case_seconds if args.inter_case_seconds is not None
-                  else 4.0 if paper_mode and not args.preflight else 0.0)
+                  else PAPER_INTER_CASE_SECONDS)
     if warmups < 0 or timed <= 0 or idle < 0 or inter_case < 0:
         parser.error("invalid warmup/timed/idle setting")
     protocol_id = timing_protocol_id(warmups, timed, idle, inter_case)
@@ -220,8 +224,7 @@ def measure_synthetic(argv: list[str]) -> None:
                 "warmup_iters": warmups, "timed_iters": timed,
                 "idle_seconds_before_timed": idle,
                 "paper_protocol": bool(paper_mode and not args.preflight
-                                       and warmups == 2 and timed == 5
-                                       and idle == 0.0 and inter_case == 4.0),
+                                       and protocol_id == PAPER_TIMING_PROTOCOL_ID),
                 "timing_protocol_id": protocol_id,
                 "environment": paper_provenance(),
             })
@@ -258,10 +261,10 @@ def measure_real(argv: list[str]) -> None:
     parser.add_argument("--windows", nargs="+", type=int, choices=(8, 16), default=(8,))
     parser.add_argument("--block-height", type=int, choices=(6, 8, 9, 18, 36, 72), default=6)
     parser.add_argument("--x-seed", type=int, default=3000)
-    parser.add_argument("--warmup-iters", type=int, default=WARMUP_ITERS)
-    parser.add_argument("--timed-iters", type=int, default=TIMED_ITERS)
-    parser.add_argument("--idle-seconds", type=float, default=0.0)
-    parser.add_argument("--inter-case-seconds", type=float, default=4.0)
+    parser.add_argument("--warmup-iters", type=int, default=PAPER_WARMUP_ITERS)
+    parser.add_argument("--timed-iters", type=int, default=PAPER_TIMED_ITERS)
+    parser.add_argument("--idle-seconds", type=float, default=PAPER_IDLE_SECONDS)
+    parser.add_argument("--inter-case-seconds", type=float, default=PAPER_INTER_CASE_SECONDS)
     parser.add_argument("--output-jsonl", type=Path)
     args = parser.parse_args(argv)
     if (args.warmup_iters < 0 or args.timed_iters <= 0
@@ -274,9 +277,7 @@ def measure_real(argv: list[str]) -> None:
                       and all(name in PAPER_WEIGHTS for name in (args.weight or PAPER_WEIGHTS)))
     protocol_id = timing_protocol_id(args.warmup_iters, args.timed_iters,
                                      args.idle_seconds, args.inter_case_seconds)
-    paper_protocol = (paper_geometry and args.warmup_iters == 2
-                      and args.timed_iters == 5 and args.idle_seconds == 0.0
-                      and args.inter_case_seconds == 4.0)
+    paper_protocol = paper_geometry and protocol_id == PAPER_TIMING_PROTOCOL_ID
     output = args.output_jsonl
     if output is None:
         prefix = ("real_weights" if paper_protocol else
