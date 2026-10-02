@@ -1,0 +1,273 @@
+{
+  "tensor_name": "model.layers.0.self_attn.v_proj.weight",
+  "M": 4096,
+  "K": 4096,
+  "nnz": 1677722,
+  "source_sha256": "0e6407938852adce87574b3ade2f4b260cb75bd076d659bcfb84b62fbbb9908a",
+  "formats": {
+    "equal_rows": {
+      "logical_window_slice_bounds": [
+        0,
+        86,
+        172,
+        258,
+        343,
+        428,
+        513,
+        598,
+        683
+      ],
+      "window_rows": [
+        516,
+        516,
+        516,
+        516,
+        516,
+        516,
+        516,
+        484
+      ],
+      "column_blocks": [
+        135,
+        170,
+        151,
+        185,
+        216,
+        166,
+        325,
+        318
+      ],
+      "total_blocks": 1666,
+      "max_column_blocks": 325,
+      "column_imbalance": 1.56062424969988,
+      "packed_a_bytes": 10235904
+    },
+    "equal_nnz": {
+      "logical_window_slice_bounds": [
+        0,
+        149,
+        321,
+        392,
+        486,
+        544,
+        570,
+        628,
+        683
+      ],
+      "window_rows": [
+        894,
+        1032,
+        426,
+        564,
+        348,
+        156,
+        348,
+        328
+      ],
+      "column_blocks": [
+        262,
+        280,
+        193,
+        211,
+        195,
+        146,
+        184,
+        188
+      ],
+      "total_blocks": 1659,
+      "max_column_blocks": 280,
+      "column_imbalance": 1.350210970464135,
+      "packed_a_bytes": 10192896
+    }
+  },
+  "npu_rounds": [
+    {
+      "round": 1,
+      "measurement_order": [
+        "equal_rows",
+        "equal_nnz"
+      ],
+      "equal_rows": {
+        "latency_us": 330.83340000000004,
+        "samples_us": [
+          332.927,
+          333.578,
+          333.748,
+          327.177,
+          326.737
+        ],
+        "effective_bandwidth_gbps": 31.192013865589143,
+        "output_errors": 0,
+        "physical_output_rows": 4128,
+        "valid_output_rows": 4096,
+        "control_bytes": 75200,
+        "packed_a_bytes": 10235904,
+        "column_blocks": [
+          135,
+          170,
+          151,
+          185,
+          216,
+          166,
+          325,
+          318
+        ]
+      },
+      "equal_nnz": {
+        "latency_us": 312.5794,
+        "samples_us": [
+          309.957,
+          310.498,
+          308.527,
+          318.247,
+          315.668
+        ],
+        "effective_bandwidth_gbps": 32.93320033245953,
+        "output_errors": 0,
+        "physical_output_rows": 8256,
+        "valid_output_rows": 4096,
+        "control_bytes": 84832,
+        "packed_a_bytes": 10192896,
+        "column_blocks": [
+          262,
+          280,
+          193,
+          211,
+          195,
+          146,
+          184,
+          188
+        ]
+      }
+    },
+    {
+      "round": 2,
+      "measurement_order": [
+        "equal_nnz",
+        "equal_rows"
+      ],
+      "equal_rows": {
+        "latency_us": 329.5252,
+        "samples_us": [
+          324.877,
+          326.987,
+          334.487,
+          328.267,
+          333.008
+        ],
+        "effective_bandwidth_gbps": 31.315844736608916,
+        "output_errors": 0,
+        "physical_output_rows": 4128,
+        "valid_output_rows": 4096,
+        "control_bytes": 75200,
+        "packed_a_bytes": 10235904,
+        "column_blocks": [
+          135,
+          170,
+          151,
+          185,
+          216,
+          166,
+          325,
+          318
+        ]
+      },
+      "equal_nnz": {
+        "latency_us": 312.0476,
+        "samples_us": [
+          309.388,
+          315.157,
+          313.877,
+          310.808,
+          311.008
+        ],
+        "effective_bandwidth_gbps": 32.98932598744551,
+        "output_errors": 0,
+        "physical_output_rows": 8256,
+        "valid_output_rows": 4096,
+        "control_bytes": 84832,
+        "packed_a_bytes": 10192896,
+        "column_blocks": [
+          262,
+          280,
+          193,
+          211,
+          195,
+          146,
+          184,
+          188
+        ]
+      }
+    },
+    {
+      "round": 3,
+      "measurement_order": [
+        "equal_rows",
+        "equal_nnz"
+      ],
+      "equal_rows": {
+        "latency_us": 341.087,
+        "samples_us": [
+          338.567,
+          345.837,
+          344.067,
+          336.717,
+          340.247
+        ],
+        "effective_bandwidth_gbps": 30.25433393826209,
+        "output_errors": 0,
+        "physical_output_rows": 4128,
+        "valid_output_rows": 4096,
+        "control_bytes": 75200,
+        "packed_a_bytes": 10235904,
+        "column_blocks": [
+          135,
+          170,
+          151,
+          185,
+          216,
+          166,
+          325,
+          318
+        ]
+      },
+      "equal_nnz": {
+        "latency_us": 314.3492,
+        "samples_us": [
+          315.197,
+          320.187,
+          313.697,
+          306.598,
+          316.067
+        ],
+        "effective_bandwidth_gbps": 32.74778494744062,
+        "output_errors": 0,
+        "physical_output_rows": 8256,
+        "valid_output_rows": 4096,
+        "control_bytes": 84832,
+        "packed_a_bytes": 10192896,
+        "column_blocks": [
+          262,
+          280,
+          193,
+          211,
+          195,
+          146,
+          184,
+          188
+        ]
+      }
+    }
+  ],
+  "valid_rows_per_window": [
+    894,
+    1032,
+    426,
+    564,
+    348,
+    156,
+    348,
+    328
+  ],
+  "physical_rows_per_window": 1032
+}
